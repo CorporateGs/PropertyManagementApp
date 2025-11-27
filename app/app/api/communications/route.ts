@@ -7,6 +7,7 @@ import { ok, created, badRequest, serverError, paginated } from "@/lib/api-respo
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { z } from "zod";
+import { EmailService, SMSService, PushNotificationService, TemplateManager } from '@/lib/services/communication/communication-service';
 
 // GET /api/communications - List communications
 export async function GET(request: NextRequest) {
@@ -162,21 +163,34 @@ export async function POST(request: NextRequest) {
       attachments?: string[];
     };
 
-    // Verify recipient exists based on type
+    // Verify recipient exists and get contact info
     let recipientExists = false;
+    let recipientEmail: string | undefined;
+    let recipientPhone: string | undefined;
 
     switch (body.recipientType) {
       case "TENANT":
         const tenant = await prisma.tenant.findUnique({
           where: { id: body.recipientId },
+          select: { email: true, phone: true }
         });
         recipientExists = !!tenant;
+        if (tenant) {
+          recipientEmail = tenant.email;
+          recipientPhone = tenant.phone;
+        }
         break;
       case "OWNER":
         const owner = await prisma.user.findFirst({
           where: { id: body.recipientId, role: "OWNER" },
+          select: { email: true }
         });
         recipientExists = !!owner;
+        if (owner) {
+          recipientEmail = owner.email;
+          // Phone number not available in User model
+          recipientPhone = undefined;
+        }
         break;
       // Add other recipient types as needed
     }
@@ -185,25 +199,59 @@ export async function POST(request: NextRequest) {
       return badRequest("Recipient not found");
     }
 
-    // TODO: Import and call appropriate communication service based on type
-    // let deliveryStatus = "FAILED";
+    // Handle template if provided
+    const templateManager = new TemplateManager();
+    let subject = body.subject;
+    let message = body.message;
 
-    // if (body.type === "EMAIL") {
-    //   deliveryStatus = await EmailService.sendEmail({
-    //     to: recipient.email,
-    //     subject: body.subject,
-    //     message: body.message,
-    //     templateId: body.templateId,
-    //   });
-    // } else if (body.type === "SMS") {
-    //   deliveryStatus = await SMSService.sendSMS({
-    //     to: recipient.phone,
-    //     message: body.message,
-    //   });
-    // }
+    if (body.templateId) {
+      const template = await templateManager.getTemplate(body.templateId);
+      subject = template.subject || subject;
+      message = template.content;
+      // Note: Variable replacement would require variables in request body
+    }
 
-    // For now, simulate delivery
-    const deliveryStatus = Math.random() > 0.1 ? "SENT" : "FAILED"; // 90% success rate
+    // Initialize services
+    const emailService = new EmailService();
+    const smsService = new SMSService();
+    const pushService = new PushNotificationService();
+
+    // Send communication based on type
+    let result;
+    let deliveryStatus = "FAILED";
+    let messageId: string | undefined;
+
+    if (body.type === "EMAIL") {
+      if (!recipientEmail) {
+        return badRequest("Recipient email not available");
+      }
+      result = await emailService.sendEmail({
+        to: recipientEmail,
+        subject,
+        body: message,
+        html: message,
+      });
+      deliveryStatus = result.success ? "SENT" : "FAILED";
+      messageId = result.messageId;
+    } else if (body.type === "SMS") {
+      if (!recipientPhone) {
+        return badRequest("Recipient phone not available");
+      }
+      result = await smsService.sendSMS({
+        to: recipientPhone,
+        message,
+      });
+      deliveryStatus = result.success ? "SENT" : "FAILED";
+      messageId = result.messageId;
+    } else if (body.type === "PUSH") {
+      result = await pushService.sendPushNotification({
+        userId: body.recipientId,
+        title: subject,
+        body: message,
+      });
+      deliveryStatus = result.success ? "SENT" : "FAILED";
+      // Push service may not return messageId, adjust as needed
+    }
 
     // Create communication record
     const communication = await prisma.communication.create({
@@ -212,6 +260,7 @@ export async function POST(request: NextRequest) {
         status: deliveryStatus,
         sentBy: user.id,
         sentAt: new Date(),
+        messageId,
       },
       include: {
         tenant: {
@@ -257,7 +306,7 @@ export async function PUT(request: NextRequest) {
       scheduledAt?: string;
     };
 
-    // Verify all recipients exist
+    // Verify all recipients exist and get contact info
     let recipients: any[] = [];
 
     switch (body.recipientType) {
@@ -267,6 +316,7 @@ export async function PUT(request: NextRequest) {
             id: { in: body.recipientIds },
             status: "ACTIVE",
           },
+          select: { id: true, email: true, phone: true }
         });
         break;
       // Add other recipient types as needed
@@ -276,20 +326,69 @@ export async function PUT(request: NextRequest) {
       return badRequest("Some recipients not found or inactive");
     }
 
-    // TODO: Import and call bulk communication service
-    // const results = await EmailService.sendBulkEmails({
-    //   recipients: recipients.map(r => r.email),
-    //   subject: body.subject,
-    //   message: body.message,
-    //   templateId: body.templateId,
-    // });
+    // Handle template if provided
+    const templateManager = new TemplateManager();
+    let subject = body.subject;
+    let message = body.message;
 
-    // For now, simulate bulk delivery results
-    const results = body.recipientIds.map(recipientId => ({
-      recipientId,
-      status: Math.random() > 0.05 ? "SENT" : "FAILED", // 95% success rate
-      deliveredAt: new Date().toISOString(),
-    }));
+    if (body.templateId) {
+      const template = await templateManager.getTemplate(body.templateId);
+      subject = template.subject || subject;
+      message = template.content;
+      // Note: Variable replacement would require variables in request body
+    }
+
+    // Initialize services
+    const emailService = new EmailService();
+    const smsService = new SMSService();
+    const pushService = new PushNotificationService();
+
+    // Send bulk communication based on type
+    let bulkResult;
+    let results: Array<{ recipientId: string; status: string; messageId?: string }> = [];
+
+    if (body.type === "EMAIL") {
+      const emailRecipients = recipients.map(r => ({
+        email: r.email,
+        variables: {} // Add variables if needed
+      }));
+      bulkResult = await emailService.sendBulkEmails({
+        recipients: emailRecipients,
+        templateId: body.templateId,
+        batchSize: 100,
+      });
+      results = recipients.map((r, index) => ({
+        recipientId: r.id,
+        status: bulkResult.results[index]?.success ? "SENT" : "FAILED",
+        messageId: bulkResult.results[index]?.messageId,
+      }));
+    } else if (body.type === "SMS") {
+      const smsRecipients = recipients.map(r => ({
+        phone: r.phone,
+        message: message,
+        variables: {} // Add variables if needed
+      }));
+      bulkResult = await smsService.sendBulkSMS({
+        recipients: smsRecipients,
+        templateMessage: message,
+        batchSize: 50,
+      });
+      results = recipients.map((r, index) => ({
+        recipientId: r.id,
+        status: bulkResult.results[index]?.success ? "SENT" : "FAILED",
+        messageId: bulkResult.results[index]?.messageId,
+      }));
+    } else if (body.type === "PUSH") {
+      bulkResult = await pushService.sendBulkPushNotifications({
+        userIds: body.recipientIds,
+        title: subject,
+        body: message,
+      });
+      results = body.recipientIds.map(id => ({
+        recipientId: id,
+        status: bulkResult.delivered > 0 ? "SENT" : "FAILED",
+      }));
+    }
 
     // Create communication records for each recipient
     const communications = await Promise.all(
@@ -305,6 +404,7 @@ export async function PUT(request: NextRequest) {
             status: results[index].status,
             sentBy: user.id,
             sentAt: new Date(),
+            messageId: results[index].messageId,
           },
         })
       )

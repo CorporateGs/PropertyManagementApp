@@ -1,0 +1,110 @@
+Environment variables loaded from .env
+Prisma schema loaded from prisma\schema.prisma
+
+Error: Prisma schema validation - (validate wasm)
+Error code: P1012
+error: Error validating: This line is not a valid field or attribute definition.
+  -->  prisma\schema.prisma:1292
+   | 
+1291 | // Building Automation Systems
+1292 | model BuildingSystem {
+1293 |   id           String   @id @default(cuid())
+   | 
+error: Field "id" is already defined on model "ChatMessage".
+  -->  prisma\schema.prisma:1293
+   | 
+1292 | model BuildingSystem {
+1293 |   id           String   @id @default(cuid())
+   | 
+error: Field "createdAt" is already defined on model "ChatMessage".
+  -->  prisma\schema.prisma:1307
+   | 
+1306 |   isActive     Boolean  @default(true)
+1307 |   createdAt    DateTime @default(now())
+   | 
+error: Type "BuildingSystem" is neither a built-in type, nor refers to another model, composite type, or enum.
+  -->  prisma\schema.prisma:105
+   | 
+104 |   units               Unit[]
+105 |   systems             BuildingSystem[] // IoT Systems
+   | 
+error: Type "BuildingSystem" is neither a built-in type, nor refers to another model, composite type, or enum.
+  -->  prisma\schema.prisma:1340
+   | 
+1339 | 
+1340 |   system         BuildingSystem @relation(fields: [systemId], references: [id], onDelete: Cascade)
+   | 
+error: Type "BuildingSystem" is neither a built-in type, nor refers to another model, composite type, or enum.
+  -->  prisma\schema.prisma:1362
+   | 
+1361 | 
+1362 |   system       BuildingSystem @relation(fields: [systemId], references: [id], onDelete: Cascade)
+   | 
+error: Type "BuildingSystem" is neither a built-in type, nor refers to another model, composite type, or enum.
+  -->  prisma\schema.prisma:1418
+   | 
+1417 | 
+1418 |   system      BuildingSystem @relation(fields: [systemId], references: [id], onDelete: Cascade)
+   | 
+error: Type "BuildingSystem" is neither a built-in type, nor refers to another model, composite type, or enum.
+  -->  prisma\schema.prisma:1433
+   | 
+1432 | 
+1433 |   system     BuildingSystem @relation(fields: [systemId], references: [id], onDelete: Cascade)
+   | 
+error: Error validating model "ChatMessage": At most one field must be marked as the id field with the `@id` attribute.
+  -->  prisma\schema.prisma:1272
+   | 
+1271 | 
+1272 | model ChatMessage {
+1273 |   id               String   @id @default(cuid())
+1274 |   conversationId   String
+1275 |   userId           String
+1276 |   message          String
+1277 |   response         String?
+1278 |   intent           String?
+1279 |   sentiment        String?
+1280 |   confidence       Float?
+1281 |   suggestedActions String? // JSON array of suggested actions
+1282 |   createdAt        DateTime @default(now())
+1283 | 
+1284 |   // Relations
+1285 |   conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+1286 |   User         User             @relation(fields: [userId], references: [id])
+1287 | 
+1288 | 
+1289 | // Building Automation Systems
+1290 | 
+1291 | // Building Automation Systems
+1292 | model BuildingSystem {
+1293 |   id           String   @id @default(cuid())
+1294 |   buildingId   String
+1295 |   systemType   String   // HVAC, SECURITY, CAMERA, ACCESS_CONTROL, FIRE, ELEVATOR, LIGHTING, ENERGY
+1296 |   name         String
+1297 |   manufacturer String?
+1298 |   model        String?
+1299 |   ipAddress    String?
+1300 |   apiEndpoint  String?
+1301 |   mqttTopic    String?
+1302 |   status       String   @default("OFFLINE") // ONLINE, OFFLINE, MAINTENANCE, ERROR
+1303 |   lastPing     DateTime?
+1304 |   config       String?  // JSON configuration
+1305 |   credentials  String?  // Encrypted credentials
+1306 |   isActive     Boolean  @default(true)
+1307 |   createdAt    DateTime @default(now())
+1308 |   updatedAt    DateTime @updatedAt
+1309 | 
+1310 |   building     Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+1311 |   devices      Device[]
+1312 |   sensors      Sensor[]
+1313 |   alerts       SystemAlert[]
+1314 |   logs         SystemLog[]
+1315 | 
+1316 |   @@map("building_systems")
+1317 | }
+   | 
+
+Validation Error Count: 9
+[Context: validate]
+
+Prisma CLI Version : 6.7.0

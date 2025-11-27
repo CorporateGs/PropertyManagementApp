@@ -6,6 +6,7 @@ import { ok, created, badRequest, serverError, paginated } from "@/lib/api-respo
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { z } from "zod";
+import { storage, generateFilename, validateFile } from '@/lib/storage';
 
 // GET /api/uploads - List uploaded documents
 export async function GET(request: NextRequest) {
@@ -23,13 +24,13 @@ export async function GET(request: NextRequest) {
     // Role-based filtering
     if (user.role === "TENANT") {
       // Tenants can only see their own documents
-      where.uploadedBy = user.id;
+      where.createdBy = user.id;
     }
 
     if (user.role === "OWNER") {
       // Owners can only see documents related to their properties
       where.OR = [
-        { uploadedBy: user.id },
+        { createdBy: user.id },
         {
           relatedEntityType: "UNIT",
           relatedEntityId: {
@@ -53,7 +54,7 @@ export async function GET(request: NextRequest) {
     const documents = await prisma.document.findMany({
       where,
       include: {
-        uploadedByUser: {
+        creator: {
           select: {
             id: true,
             firstName: true,
@@ -110,25 +111,13 @@ export async function POST(request: NextRequest) {
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ];
 
-    if (file.size > maxSize) {
-      return badRequest("File size exceeds maximum of 10MB");
-    }
-
-    if (!allowedTypes.includes(file.type)) {
-      return badRequest(`File type ${file.type} is not allowed`);
-    }
+    validateFile(file, { maxSize, allowedTypes });
 
     // Generate unique filename
-    const timestamp = Date.now();
-    const randomSuffix = Math.random().toString(36).substring(2, 8);
-    const fileExtension = file.name.split(".").pop();
-    const filename = `${timestamp}_${randomSuffix}.${fileExtension}`;
+    const filename = generateFilename(file.name);
 
-    // TODO: Upload file to cloud storage (S3/GCS) or local storage
-    // const fileUrl = await StorageService.upload(file, `documents/${filename}`);
-
-    // For now, simulate file upload
-    const fileUrl = `/api/files/${filename}`;
+    // Upload to storage
+    const fileUrl = await storage.upload(file, `documents/${filename}`);
 
     // Get metadata from form data
     const metadata = {
@@ -153,10 +142,10 @@ export async function POST(request: NextRequest) {
         relatedEntityId: metadata.relatedEntityId,
         description: metadata.description,
         category: metadata.category,
-        uploadedBy: user.id,
+        createdBy: user.id,
       },
       include: {
-        uploadedByUser: {
+        creator: {
           select: {
             id: true,
             firstName: true,

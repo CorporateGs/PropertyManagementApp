@@ -56,7 +56,7 @@ export enum SignatureStatus {
 /**
  * Document Management Service
  */
-export class DocumentManagementService {
+class DocumentManagementService {
   /**
    * Upload and process document
    */
@@ -456,7 +456,7 @@ export class DocumentManagementService {
 /**
  * E-Signature Service
  */
-export class ESignatureService {
+class ESignatureService {
   /**
    * Request document signature
    */

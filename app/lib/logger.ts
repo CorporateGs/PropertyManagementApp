@@ -436,16 +436,18 @@ export function logUncaughtException(error: Error): void {
 // =============================================================================
 
 // Set up global error handlers if in Node.js environment
-if (typeof process !== "undefined") {
+if (typeof process !== "undefined" && typeof process.on === "function") {
   process.on("unhandledRejection", (reason) => {
     logUnhandledRejection(reason);
   });
 
-  process.on("uncaughtException", (error) => {
-    logUncaughtException(error);
-    // Give logger time to write before exiting
-    setTimeout(() => process.exit(1), 1000);
-  });
+  if (typeof process.exit === "function") {
+    process.on("uncaughtException", (error) => {
+      logUncaughtException(error);
+      // Give logger time to write before exiting
+      setTimeout(() => process.exit(1), 1000);
+    });
+  }
 }
 
 // =============================================================================

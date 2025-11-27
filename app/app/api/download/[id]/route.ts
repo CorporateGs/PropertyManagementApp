@@ -147,7 +147,7 @@ export async function GET(
         details: {
           fileName: document.fileName,
           fileSize: document.fileSize,
-          documentType: document.documentType,
+          category: document.category,
         },
         ipAddress: request.ip || request.headers.get('x-forwarded-for'),
         userAgent: request.headers.get('user-agent'),

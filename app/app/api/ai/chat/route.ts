@@ -6,6 +6,7 @@ import { ok, created, badRequest, serverError, paginated } from "@/lib/api-respo
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { z } from "zod";
+import { PropertyManagementChatbot } from '@/lib/services/ai/ai-service';
 
 // POST /api/ai/chat - Process chat message
 export async function POST(request: NextRequest) {
@@ -41,76 +42,62 @@ export async function POST(request: NextRequest) {
       };
     };
 
-    // TODO: Import and call PropertyManagementChatbot.chat from AI service
-    // const aiResponse = await PropertyManagementChatbot.chat({
-    //   message: body.message,
-    //   context: body.context,
-    //   conversationId: body.conversationId,
-    //   userId: user.id,
-    // });
-
-    // For now, return a mock response that matches the expected AI service format
-    const mockResponse = {
-      response: "I understand you're asking about property management. Based on your role and context, I can help you with tenant inquiries, maintenance requests, payment questions, or lease information. Could you please provide more specific details about what you need assistance with?",
-      intent: "GENERAL_INQUIRY",
-      sentiment: "NEUTRAL",
-      confidence: 0.85,
-      suggestedActions: [
-        {
-          type: "VIEW_PAYMENTS",
-          label: "Check Payment Status",
-          description: "View your recent payments and payment history",
-        },
-        {
-          type: "CREATE_MAINTENANCE",
-          label: "Submit Maintenance Request",
-          description: "Report a maintenance issue in your unit",
-        },
-        {
-          type: "VIEW_LEASE",
-          label: "View Lease Information",
-          description: "Access your lease details and important dates",
-        },
-      ],
+    // Initialize chatbot and call real AI service
+    const chatbot = new PropertyManagementChatbot();
+    const aiResponse = await chatbot.chat({
       conversationId: body.conversationId || `conv_${Date.now()}_${user.id}`,
-      messageId: `msg_${Date.now()}`,
-    };
+      message: body.message,
+      userType: body.context.userType === 'STAFF' || body.context.userType === 'ADMIN' ? 'MANAGER' : body.context.userType as 'TENANT' | 'OWNER',
+      context: {
+        userId: user.id,
+        tenantId: body.context.relatedEntity?.type === 'TENANT' ? body.context.relatedEntity.id : undefined,
+        buildingId: body.context.relatedEntity?.type === 'BUILDING' ? body.context.relatedEntity.id : undefined,
+      }
+    });
 
-    // TODO: Persist conversation to database
-    // await prisma.chatConversation.upsert({
-    //   where: { id: mockResponse.conversationId },
-    //   update: {
-    //     updatedAt: new Date(),
-    //   },
-    //   create: {
-    //     id: mockResponse.conversationId,
-    //     userId: user.id,
-    //     title: body.message.substring(0, 100),
-    //   },
-    // });
+    // Generate messageId
+    const messageId = `msg_${Date.now()}`;
 
-    // TODO: Persist message to database
-    // await prisma.chatMessage.create({
-    //   data: {
-    //     id: mockResponse.messageId,
-    //     conversationId: mockResponse.conversationId,
-    //     userId: user.id,
-    //     message: body.message,
-    //     response: mockResponse.response,
-    //     intent: mockResponse.intent,
-    //     sentiment: mockResponse.sentiment,
-    //     confidence: mockResponse.confidence,
-    //   },
-    // });
+    // Persist conversation to database
+    await prisma.chatConversation.upsert({
+      where: { id: aiResponse.conversationId || body.conversationId || `conv_${Date.now()}_${user.id}` },
+      update: {
+        updatedAt: new Date(),
+      },
+      create: {
+        id: aiResponse.conversationId || body.conversationId || `conv_${Date.now()}_${user.id}`,
+        userId: user.id,
+        title: body.message.substring(0, 100),
+      },
+    });
+
+    // Persist message to database
+    await prisma.chatMessage.create({
+      data: {
+        id: messageId,
+        conversationId: aiResponse.conversationId || body.conversationId || `conv_${Date.now()}_${user.id}`,
+        userId: user.id,
+        message: body.message,
+        response: aiResponse.response,
+        intent: aiResponse.intent,
+        sentiment: aiResponse.sentiment,
+        confidence: aiResponse.confidence,
+        suggestedActions: JSON.stringify(aiResponse.suggestedActions),
+      },
+    });
 
     logger.info("AI chat message processed", {
       userId: user.id,
-      conversationId: mockResponse.conversationId,
-      intent: mockResponse.intent,
-      sentiment: mockResponse.sentiment,
+      conversationId: aiResponse.conversationId || body.conversationId || `conv_${Date.now()}_${user.id}`,
+      intent: aiResponse.intent,
+      sentiment: aiResponse.sentiment,
     });
 
-    return created(mockResponse, "AI response generated successfully");
+    return created({
+      ...aiResponse,
+      conversationId: aiResponse.conversationId || body.conversationId || `conv_${Date.now()}_${user.id}`,
+      messageId,
+    }, "AI response generated successfully");
   } catch (error) {
     logger.error("Failed to process AI chat message", { error });
     return serverError(error);

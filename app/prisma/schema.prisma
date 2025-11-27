@@ -1,13 +1,47 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-    provider = "prisma-client-js"
-    binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
-    output = "/home/ubuntu/property_management_system/app/node_modules/.prisma/client"
+  provider = "prisma-client-js"
 }
 
 datasource db {
-    provider = "postgresql"
-    url      = env("DATABASE_URL")
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Base Models
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  firstName     String?
+  lastName      String?
+  name          String?
+  password      String
+  role          String   @default("USER")
+  isActive      Boolean  @default(true)
+  emailVerified Boolean  @default(false)
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  accounts            Account[]
+  sessions            Session[]
+  buildings           Building[]
+  units               Unit[]
+  tenants             Tenant[]
+  maintenanceRequests MaintenanceRequest[]
+  documents           Document[]
+  chatConversations   ChatConversation[]
+  chatMessages        ChatMessage[]
+  calendarEvents      CalendarEvent[]
+  reminders           Reminder[]
+  calendarSettings    CalendarSettings[]
+  orders              Order[] // AI Agency orders
+  subscriptions       Subscription[]
+
+  @@map("users")
 }
 
 model Account {
@@ -16,12 +50,12 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?
   session_state     String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -40,1569 +74,1452 @@ model Session {
   @@map("sessions")
 }
 
-model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  password      String
-  firstName     String
-  lastName      String
-  role          UserRole  @default(STAFF)
-  phone         String?
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  emailVerified DateTime?
-
-  accounts                   Account[]
-  sessions                   Session[]
-  assignedMaintenance        MaintenanceRequest[] @relation("AssignedStaff")
-  createdCommunications      Communication[]      @relation("CreatedBy")
-  createdMaintenanceRequests MaintenanceRequest[] @relation("CreatedBy")
-  createdLeads               Lead[]               @relation("CreatedBy")
-  assignedLeads              Lead[]               @relation("AssignedTo")
-
-  @@map("users")
-}
-
-model VerificationToken {
-  identifier String
-  token      String   @unique
-  expires    DateTime
-
-  @@unique([identifier, token])
-  @@map("verification_tokens")
-}
-
 model Building {
-  id              String   @id @default(cuid())
-  name            String
-  address         String
-  city            String
-  state           String
-  zipCode         String
-  totalUnits      Int
-  description     String?
-  yearBuilt       Int?
-  propertyType    String? // Commercial, Residential, Mixed
-  managementFee   Float?
-  insurancePolicy String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id          String  @id @default(cuid())
+  name        String
+  address     String
+  city        String
+  state       String
+  zipCode     String
+  country     String
+  description String?
+  totalUnits  Int
+  yearBuilt   Int?
 
-  units           Units[]
-  smartDevices    SmartDevice[]
-  parkingSpaces   ParkingSpace[]
-  energyReadings  EnergyReading[]
-  inspections     PropertyInspection[]
+  // Property Score Fields
+  propertyScore    Float? // Overall property score (0-850)
+  budgetScore      Float? // Budget adherence score (0-100)
+  complianceScore  Float? // PICUs/NOCIS compliance score (0-100)
+  taxFilingScore   Float? // CAO returns filing score (0-100)
+  maintenanceScore Float? // Service issues resolution score (0-100)
+  legalScore       Float? // Lawsuits/incidents score (0-100)
+  lastScoreUpdate  DateTime? // Last time score was calculated
+  scoreBreakdown   String? // JSON breakdown of all scores
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String
+
+  // Relations
+  units               Unit[]
+  systems             BuildingSystem[] // IoT Systems
+  documents           Document[]
+  maintenanceRequests MaintenanceRequest[]
+  events              CommunityEvent[]
+  amenities           Amenity[]
+  alerts              EmergencyAlert[]
+  brandings           BrandingSettings[]
+  websites            WebsiteManagement[]
+  complianceChecks    ComplianceCheck[]
+  affordableHousing   AffordableHousing[]
+  statusCertificates  StatusCertificate[]
+  propertyScores      PropertyScoreHistory[]
+  calendarEvents      CalendarEvent[]
+  annualDeadlines     AnnualDeadline[]
+  vendors             Vendor[]
+  creator             User                   @relation(fields: [createdBy], references: [id])
+  BoardMeeting        BoardMeeting[]
 
   @@map("buildings")
 }
 
-model Units {
-  id              String     @id @default(cuid())
-  buildingId      String
-  unitNumber      String
-  floor           Int?
-  squareFeet      Int?
-  bedrooms        Int?
-  bathrooms       Float?
-  rentAmount      Float
-  status          UnitStatus @default(VACANT)
-  amenities       String?
-  description     String?
-  lastRenovated   DateTime?
-  marketRent      Float? // AI-predicted market rent
-  occupancyScore  Float? // AI occupancy likelihood
-  energyRating    String? // A, B, C, D, E
-  virtualTourUrl  String?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+model Unit {
+  id          String   @id @default(cuid())
+  buildingId  String
+  unitNumber  String
+  type        String
+  bedrooms    Int
+  bathrooms   Float
+  squareFeet  Int
+  rentAmount  Float
+  status      String   @default("AVAILABLE")
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String
 
+  // Relations
   building            Building             @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  creator             User                 @relation(fields: [createdBy], references: [id])
   tenants             Tenant[]
-  payments            Payment[]
-  maintenanceRequests MaintenanceRequest[]
   documents           Document[]
-  applications        RentalApplication[]
-  inspections         UnitInspection[]
-  leads               Lead[]
+  maintenanceRequests MaintenanceRequest[]
+  emergencyRegistry   EmergencyRegistry[]
 
   @@unique([buildingId, unitNumber])
   @@map("units")
 }
 
 model Tenant {
-  id                 String    @id @default(cuid())
-  unitId             String
-  firstName          String
-  lastName           String
-  email              String    @unique
-  phone              String?
-  emergencyName      String?
-  emergencyPhone     String?
-  emergencyRelation  String?
-  leaseStartDate     DateTime
-  leaseEndDate       DateTime
-  rentAmount         Float
-  securityDeposit    Float?
-  notes              String?
-  isActive           Boolean   @default(true)
-  creditScore        Int?
-  monthlyIncome      Float?
-  employmentStatus   String?
-  previousAddress    String?
-  renewalLikelihood  Float?    // AI prediction
-  riskScore          Float?    // AI risk assessment
-  satisfactionScore  Float?    // AI satisfaction score
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  unitId           String
+  firstName        String
+  lastName         String
+  email            String
+  phone            String?
+  dateOfBirth      DateTime?
+  ssn              String?
+  emergencyContact String?
+  status           String    @default("ACTIVE")
+  leaseStart       DateTime
+  leaseEnd         DateTime?
+  rentAmount       Float
+  securityDeposit  Float?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  createdBy        String
 
-  unit                Units            @relation(fields: [unitId], references: [id], onDelete: Cascade)
-  payments            Payment[]
-  communications      Communication[]
-  maintenanceRequests MaintenanceRequest[]
+  // Relations
+  unit                Unit                 @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  creator             User                 @relation(fields: [createdBy], references: [id])
   documents           Document[]
-  tenantPortalAccess  TenantPortalAccess[]
+  maintenanceRequests MaintenanceRequest[]
+  payments            Payment[]
 
   @@map("tenants")
 }
 
-model Payment {
-  id              String        @id @default(cuid())
-  tenantId        String
-  unitId          String
-  amount          Float
-  dueDate         DateTime
-  paidDate        DateTime?
-  status          PaymentStatus @default(PENDING)
-  paymentType     PaymentType   @default(RENT)
-  lateFee         Float?
-  description     String?
-  paymentMethod   String?
-  transactionId   String?
-  notes           String?
-  autoPayEnabled  Boolean?      @default(false)
-  reminderSent    Boolean?      @default(false)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  unit   Units  @relation(fields: [unitId], references: [id], onDelete: Cascade)
-
-  @@map("payments")
-}
-
-model Communication {
-  id              String              @id @default(cuid())
-  tenantId        String?
-  createdByUserId String
-  type            CommunicationType
-  subject         String?
-  content         String
-  timestamp       DateTime            @default(now())
-  isImportant     Boolean             @default(false)
-  followUpDate    DateTime?
-  status          CommunicationStatus @default(COMPLETED)
-  sentViaAI       Boolean?            @default(false)
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-
-  tenant    Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  createdBy User    @relation("CreatedBy", fields: [createdByUserId], references: [id])
-
-  @@map("communications")
-}
-
 model MaintenanceRequest {
-  id                String              @id @default(cuid())
-  unitId            String
-  tenantId          String?
-  createdByUserId   String
-  assignedStaffId   String?
-  title             String
-  description       String
-  category          MaintenanceCategory
-  priority          Priority            @default(MEDIUM)
-  status            MaintenanceStatus   @default(PENDING)
-  requestDate       DateTime            @default(now())
-  scheduledDate     DateTime?
-  completedDate     DateTime?
-  estimatedCost     Float?
-  actualCost        Float?
-  contractorName    String?
-  contractorContact String?
-  notes             String?
-  aiPredictedCost   Float? // AI cost prediction
-  predictedDuration Int?   // AI duration prediction in hours
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  id          String    @id @default(cuid())
+  unitId      String
+  tenantId    String
+  title       String
+  description String
+  priority    String    @default("MEDIUM")
+  status      String    @default("OPEN")
+  assignedTo  String?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  unit          Units     @relation(fields: [unitId], references: [id], onDelete: Cascade)
-  tenant        Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  createdBy     User      @relation("CreatedBy", fields: [createdByUserId], references: [id])
-  assignedStaff User?     @relation("AssignedStaff", fields: [assignedStaffId], references: [id])
-  documents     Document[]
+  // Relations
+  unit       Unit      @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  User       User?     @relation(fields: [userId], references: [id])
+  userId     String?
+  Building   Building? @relation(fields: [buildingId], references: [id])
+  buildingId String?
 
   @@map("maintenance_requests")
 }
 
 model Document {
-  id                   String           @id @default(cuid())
-  tenantId             String?
-  unitId               String?
-  maintenanceRequestId String?
-  fileName             String
-  originalName         String
-  filePath             String
-  fileType             String
-  fileSize             Int
-  category             DocumentCategory
-  description          String?
-  isAIProcessed        Boolean?         @default(false)
-  aiExtractedData      String?          @db.Text
-  uploadedAt           DateTime         @default(now())
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
+  id          String   @id @default(cuid())
+  buildingId  String?
+  unitId      String?
+  tenantId    String?
+  name        String
+  type        String
+  url         String
+  description String?
+  tags        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String
 
-  tenant             Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  unit               Units?              @relation(fields: [unitId], references: [id], onDelete: Cascade)
-  maintenanceRequest MaintenanceRequest? @relation(fields: [maintenanceRequestId], references: [id], onDelete: Cascade)
+  // Relations
+  building Building? @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  unit     Unit?     @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  tenant   Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  creator  User      @relation(fields: [createdBy], references: [id])
 
   @@map("documents")
 }
 
-// New AI and Advanced Features Models
+model Payment {
+  id          String    @id @default(cuid())
+  tenantId    String
+  amount      Float
+  type        String
+  status      String    @default("PENDING")
+  dueDate     DateTime
+  paidDate    DateTime?
+  method      String?
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-model RentalApplication {
-  id                   String                @id @default(cuid())
-  unitId               String
-  firstName            String
-  lastName             String
-  email                String
-  phone                String
-  currentAddress       String
-  employerName         String?
-  monthlyIncome        Float
-  creditScore          Int?
-  hasEvictions         Boolean               @default(false)
-  hasPets              Boolean               @default(false)
-  petDescription       String?
-  moveInDate           DateTime
-  applicationStatus    ApplicationStatus     @default(PENDING)
-  aiRiskScore          Float?                // AI-generated risk score
-  aiRecommendation     ApplicationDecision?  // AI recommendation
-  creditCheckStatus    CreditCheckStatus     @default(PENDING)
-  backgroundCheckStatus BackgroundCheckStatus @default(PENDING)
-  notes                String?
-  submittedAt          DateTime              @default(now())
-  reviewedAt           DateTime?
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
-
-  unit Units @relation(fields: [unitId], references: [id], onDelete: Cascade)
-
-  @@map("rental_applications")
-}
-
-model SmartDevice {
-  id           String          @id @default(cuid())
-  buildingId   String
-  deviceType   SmartDeviceType
-  deviceName   String
-  location     String
-  macAddress   String?
-  ipAddress    String?
-  firmwareVersion String?
-  status       DeviceStatus    @default(ACTIVE)
-  lastPing     DateTime?
-  batteryLevel Int?
-  settings     String?         @db.Text // JSON settings
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-
-  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-  readings SmartDeviceReading[]
-
-  @@map("smart_devices")
-}
-
-model SmartDeviceReading {
-  id         String      @id @default(cuid())
-  deviceId   String
-  readingType String     // temperature, humidity, occupancy, etc.
-  value      Float
-  unit       String      // °F, %, boolean, etc.
-  timestamp  DateTime    @default(now())
-  createdAt  DateTime    @default(now())
-
-  device SmartDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-
-  @@map("smart_device_readings")
-}
-
-model ParkingSpace {
-  id         String           @id @default(cuid())
-  buildingId String
-  spaceNumber String
-  floor      String?
-  spaceType  ParkingSpaceType @default(STANDARD)
-  monthlyRate Float?
-  isOccupied Boolean          @default(false)
-  tenantId   String?
-  vehicleInfo String?
-  createdAt  DateTime         @default(now())
-  updatedAt  DateTime         @updatedAt
-
-  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-
-  @@unique([buildingId, spaceNumber])
-  @@map("parking_spaces")
-}
-
-model EnergyReading {
-  id          String      @id @default(cuid())
-  buildingId  String
-  readingType EnergyType
-  consumption Float       // kWh or therms
-  cost        Float?
-  readingDate DateTime
-  createdAt   DateTime    @default(now())
-
-  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-
-  @@map("energy_readings")
-}
-
-model Lead {
-  id             String        @id @default(cuid())
-  unitId         String?
-  firstName      String
-  lastName       String
-  email          String
-  phone          String?
-  source         LeadSource
-  status         LeadStatus    @default(NEW)
-  budget         Float?
-  moveInDate     DateTime?
-  notes          String?
-  assignedToId   String?
-  createdById    String
-  lastContactDate DateTime?
-  nextFollowUp   DateTime?
-  aiScore        Float?        // AI lead scoring
-  conversion_probability Float? // AI conversion prediction
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-
-  unit        Units? @relation(fields: [unitId], references: [id], onDelete: SetNull)
-  assignedTo  User?  @relation("AssignedTo", fields: [assignedToId], references: [id])
-  createdBy   User   @relation("CreatedBy", fields: [createdById], references: [id])
-
-  @@map("leads")
-}
-
-model PropertyInspection {
-  id           String           @id @default(cuid())
-  buildingId   String
-  inspectionType InspectionType
-  inspectorName String
-  scheduledDate DateTime
-  completedDate DateTime?
-  status       InspectionStatus @default(SCHEDULED)
-  findings     String?          @db.Text
-  violations   String?          @db.Text
-  followUpRequired Boolean      @default(false)
-  followUpDate DateTime?
-  aiRiskAssessment Float?       // AI risk assessment
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-
-  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-
-  @@map("property_inspections")
-}
-
-model UnitInspection {
-  id             String           @id @default(cuid())
-  unitId         String
-  inspectionType InspectionType
-  inspectorName  String
-  scheduledDate  DateTime
-  completedDate  DateTime?
-  status         InspectionStatus @default(SCHEDULED)
-  findings       String?          @db.Text
-  damagesFound   String?          @db.Text
-  repairCost     Float?
-  photosUrl      String?
-  aiConditionScore Float?         // AI condition assessment
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-
-  unit Units @relation(fields: [unitId], references: [id], onDelete: Cascade)
-
-  @@map("unit_inspections")
-}
-
-model TenantPortalAccess {
-  id             String   @id @default(cuid())
-  tenantId       String
-  accessToken    String   @unique
-  lastLoginAt    DateTime?
-  isActive       Boolean  @default(true)
-  preferences    String?  @db.Text // JSON preferences
-  notificationSettings String? @db.Text // JSON notification settings
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
+  // Relations
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@map("tenant_portal_access")
+  @@map("payments")
 }
 
-model BulkUpload {
-  id           String           @id @default(cuid())
-  uploadType   BulkUploadType
-  fileName     String
-  filePath     String
-  totalRecords Int
-  processedRecords Int          @default(0)
-  successfulRecords Int         @default(0)
-  failedRecords Int            @default(0)
-  status       BulkUploadStatus @default(PENDING)
-  errors       String?          @db.Text
-  uploadedById String
-  startedAt    DateTime?
-  completedAt  DateTime?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+model ComplianceCheck {
+  id          String    @id @default(cuid())
+  programId   String
+  buildingId  String?
+  checkType   String
+  dueDate     DateTime
+  completedAt DateTime?
+  status      String    @default("PENDING")
+  notes       String?
+  completedBy String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  @@map("bulk_uploads")
+  // Relations
+  program  ComplianceProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  building Building?         @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@map("compliance_checks")
 }
 
-// Enums
-enum UserRole {
-  ADMIN
-  STAFF
-  MAINTENANCE
-}
+// Enhanced Features from original schema continue here...
 
-enum UnitStatus {
-  VACANT
-  OCCUPIED
-  MAINTENANCE
-  UNAVAILABLE
-  SHOWING
-}
-
-enum PaymentStatus {
-  PENDING
-  PAID
-  LATE
-  PARTIAL
-  CANCELLED
-  REFUNDED
-}
-
-enum PaymentType {
-  RENT
-  LATE_FEE
-  SECURITY_DEPOSIT
-  UTILITY
-  MAINTENANCE
-  PARKING
-  PET_FEE
-  OTHER
-}
-
-enum CommunicationType {
-  EMAIL
-  PHONE
-  TEXT
-  IN_PERSON
-  LETTER
-  NOTE
-  AI_CHAT
-  PORTAL_MESSAGE
-}
-
-enum CommunicationStatus {
-  PENDING
-  COMPLETED
-  FOLLOW_UP_REQUIRED
-}
-
-enum MaintenanceCategory {
-  PLUMBING
-  ELECTRICAL
-  HVAC
-  APPLIANCES
-  GENERAL_REPAIR
-  CLEANING
-  PEST_CONTROL
-  EMERGENCY
-  INSPECTION
-  SMART_DEVICE
-  ENERGY_EFFICIENCY
-  OTHER
-}
-
-enum Priority {
-  LOW
-  MEDIUM
-  HIGH
-  EMERGENCY
-}
-
-enum MaintenanceStatus {
-  PENDING
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
-  SCHEDULED
-  PARTS_ORDERED
-}
-
-enum DocumentCategory {
-  LEASE
-  APPLICATION
-  INSPECTION
-  MAINTENANCE
-  COMMUNICATION
-  FINANCIAL
-  LEGAL
-  PHOTO
-  AI_GENERATED
-  OTHER
-}
-
-enum ApplicationStatus {
-  PENDING
-  UNDER_REVIEW
-  APPROVED
-  REJECTED
-  INCOMPLETE
-  WAITLISTED
-}
-
-enum ApplicationDecision {
-  APPROVE
-  REJECT
-  REVIEW
-  REQUEST_MORE_INFO
-}
-
-enum CreditCheckStatus {
-  PENDING
-  COMPLETED
-  FAILED
-  NOT_REQUIRED
-}
-
-enum BackgroundCheckStatus {
-  PENDING
-  COMPLETED
-  FAILED
-  NOT_REQUIRED
-}
-
-enum SmartDeviceType {
-  THERMOSTAT
-  SMART_LOCK
-  SECURITY_CAMERA
-  SMOKE_DETECTOR
-  WATER_SENSOR
-  MOTION_SENSOR
-  OCCUPANCY_SENSOR
-  ENERGY_METER
-  AIR_QUALITY_SENSOR
-  ACCESS_CONTROL
-}
-
-enum DeviceStatus {
-  ACTIVE
-  INACTIVE
-  ERROR
-  MAINTENANCE
-  OFFLINE
-}
-
-enum ParkingSpaceType {
-  STANDARD
-  COMPACT
-  HANDICAP
-  MOTORCYCLE
-  EV_CHARGING
-  COVERED
-}
-
-enum EnergyType {
-  ELECTRICITY
-  GAS
-  WATER
-  HEATING
-  COOLING
-  SOLAR
-}
-
-enum LeadSource {
-  WEBSITE
-  REFERRAL
-  SOCIAL_MEDIA
-  CRAIGSLIST
-  ZILLOW
-  APARTMENTS_COM
-  WALK_IN
-  PHONE_CALL
-  AI_GENERATED
-  OTHER
-}
-
-enum LeadStatus {
-  NEW
-  CONTACTED
-  QUALIFIED
-  SHOWING_SCHEDULED
-  APPLICATION_SUBMITTED
-  APPROVED
-  REJECTED
-  CONVERTED
-  LOST
-}
-
-enum InspectionType {
-  MOVE_IN
-  MOVE_OUT
-  ROUTINE
-  ANNUAL
-  SAFETY
-  MAINTENANCE
-  PROPERTY_CONDITION
-  COMPLIANCE
-  EMERGENCY
-}
-
-enum InspectionStatus {
-  SCHEDULED
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
-  RESCHEDULED
-}
-
-enum BulkUploadType {
-  TENANTS
-  UNITS
-  PAYMENTS
-  MAINTENANCE_REQUESTS
-  DOCUMENTS
-}
-
-enum BulkUploadStatus {
-  PENDING
-  PROCESSING
-  COMPLETED
-  FAILED
-  PARTIALLY_COMPLETED
-}
-
-// Advanced Financial Management Models
-model Vendor {
-  id              String         @id @default(cuid())
-  name            String
-  category        VendorCategory
-  email           String?
-  phone           String
-  address         String?
-  taxId           String?
-  insuranceExpiry DateTime?
-  licenseNumber   String?
-  rating          Float?         // AI rating based on performance
-  totalJobs       Int            @default(0)
-  onTimeRate      Float?         // Percentage of on-time completions
-  avgResponseTime Int?           // Average response time in minutes
-  paymentTerms    String?
-  notes           String?        @db.Text
-  isActive        Boolean        @default(true)
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-
-  maintenanceRequests VendorMaintenanceRequest[]
-  contracts           VendorContract[]
-  invoices            VendorInvoice[]
-
-  @@map("vendors")
-}
-
-model VendorMaintenanceRequest {
-  id                   String   @id @default(cuid())
-  maintenanceRequestId String
-  vendorId             String
-  assignedAt           DateTime @default(now())
-  respondedAt          DateTime?
-  completedAt          DateTime?
-  rating               Int?
-  feedback             String?
-  cost                 Float?
-  
-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  
-  @@map("vendor_maintenance_requests")
-}
-
-model VendorContract {
-  id              String          @id @default(cuid())
-  vendorId        String
-  contractType    ContractType
-  startDate       DateTime
-  endDate         DateTime
-  value           Float
-  terms           String          @db.Text
-  renewalDate     DateTime?
-  autoRenew       Boolean         @default(false)
-  status          ContractStatus  @default(ACTIVE)
-  documentUrl     String?
-  blockchainHash  String?         // Blockchain smart contract hash
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-
-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-
-  @@map("vendor_contracts")
-}
-
-model VendorInvoice {
-  id              String         @id @default(cuid())
-  vendorId        String
-  invoiceNumber   String         @unique
-  amount          Float
-  tax             Float?
-  totalAmount     Float
-  dueDate         DateTime
-  paidDate        DateTime?
-  status          InvoiceStatus  @default(PENDING)
+// Yardi-Compatible Features: Staff Training System
+model TrainingModule {
+  id              String   @id @default(cuid())
+  title           String
   description     String
-  category        String
+  category        String // Compliance, Operations, Safety, Customer Service
+  duration        Int // Minutes
+  content         String? // JSON content structure
+  videoUrl        String?
   documentUrl     String?
-  paymentMethod   String?
-  form1099Filed   Boolean        @default(false)
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  quizQuestions   String? // JSON quiz questions
+  passingScore    Int?     @default(80)
+  isActive        Boolean  @default(true)
+  requiredForRole String? // Admin, Staff, Maintenance
+  expiryMonths    Int? // Certificate validity in months
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  enrollments TrainingEnrollment[]
+  completions TrainingCompletion[]
 
-  @@map("vendor_invoices")
+  @@map("training_modules")
 }
 
-model AccountingTransaction {
-  id              String               @id @default(cuid())
-  transactionDate DateTime
-  type            TransactionType
-  category        TransactionCategory
-  amount          Float
-  description     String
-  reference       String?
-  buildingId      String?
-  unitId          String?
-  tenantId        String?
-  vendorId        String?
-  account         String              // Chart of accounts
-  reconciled      Boolean             @default(false)
-  reconciledDate  DateTime?
-  notes           String?             @db.Text
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+model TrainingEnrollment {
+  id              String    @id @default(cuid())
+  moduleId        String
+  userId          String
+  enrolledAt      DateTime  @default(now())
+  dueDate         DateTime?
+  status          String    @default("ENROLLED")
+  lastAccessedAt  DateTime?
+  progress        Float     @default(0) // 0-100 percentage
+  currentPosition String? // JSON last position in content
+  notes           String?
 
-  @@map("accounting_transactions")
+  module TrainingModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([moduleId, userId])
+  @@map("training_enrollments")
 }
 
-model BudgetPlan {
-  id            String       @id @default(cuid())
-  buildingId    String?
-  fiscalYear    Int
-  category      String
-  plannedAmount Float
-  actualAmount  Float        @default(0)
-  variance      Float        @default(0)
-  quarter       Int?
-  month         Int?
-  notes         String?      @db.Text
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+model TrainingCompletion {
+  id             String    @id @default(cuid())
+  moduleId       String
+  userId         String
+  completedAt    DateTime  @default(now())
+  score          Float?
+  passed         Boolean?
+  certificateUrl String?
+  expiresAt      DateTime?
+  retakeRequired Boolean   @default(false)
+  feedback       String?
 
-  @@map("budget_plans")
+  module TrainingModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([moduleId, userId])
+  @@map("training_completions")
 }
 
-model FinancialReport {
-  id           String              @id @default(cuid())
-  reportType   FinancialReportType
-  reportName   String
-  period       String
-  startDate    DateTime
-  endDate      DateTime
-  buildingId   String?
-  data         String              @db.Text // JSON data
-  generatedBy  String
-  scheduledFor DateTime?
-  recipients   String?             // Email list
-  format       String              @default("PDF")
-  fileUrl      String?
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
+// Yardi-Compatible: Enhanced Marketing & Leasing Modules
+model EnhancedMarketingCampaign {
+  id             String    @id @default(cuid())
+  name           String
+  description    String?
+  campaignType   String // Email, Social, PPC, Print, Referral
+  targetAudience String? // JSON targeting criteria
+  budget         Float?
+  startDate      DateTime
+  endDate        DateTime?
+  status         String    @default("DRAFT")
+  metrics        String? // JSON performance metrics
+  createdBy      String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  @@map("financial_reports")
+  listings EnhancedMarketingListing[]
+
+  @@map("enhanced_marketing_campaigns")
 }
 
-// Advanced Lease Management
-model Lease {
-  id                    String         @id @default(cuid())
-  unitId                String
-  tenantId              String
-  leaseType             LeaseType      @default(FIXED_TERM)
-  startDate             DateTime
-  endDate               DateTime
-  rentAmount            Float
-  securityDeposit       Float
-  petDeposit            Float?
-  lateFeeAmount         Float?
-  lateFeeDays           Int            @default(5)
-  renewalNoticeRequired Int            @default(60) // Days
-  terms                 String         @db.Text
-  specialClauses        String?        @db.Text
-  documentUrl           String?
-  blockchainHash        String?        // Immutable blockchain record
-  signedDate            DateTime?
-  status                LeaseStatus    @default(DRAFT)
-  autoRenewal           Boolean        @default(false)
-  renewalProbability    Float?         // AI prediction
-  aiReviewStatus        String?        // AI lease audit result
-  aiComplianceIssues    String?        @db.Text
-  createdAt             DateTime       @default(now())
-  updatedAt             DateTime       @updatedAt
-
-  amendments LeaseAmendment[]
-  renewals   LeaseRenewal[]
-
-  @@map("leases")
-}
-
-model LeaseAmendment {
-  id          String   @id @default(cuid())
-  leaseId     String
-  amendment   String   @db.Text
-  reason      String
-  effectiveDate DateTime
-  documentUrl String?
-  signedDate  DateTime?
-  createdAt   DateTime @default(now())
-
-  lease Lease @relation(fields: [leaseId], references: [id], onDelete: Cascade)
-
-  @@map("lease_amendments")
-}
-
-model LeaseRenewal {
-  id            String   @id @default(cuid())
-  leaseId       String
-  newStartDate  DateTime
-  newEndDate    DateTime
-  newRentAmount Float
-  status        String   @default("PENDING")
-  offeredAt     DateTime @default(now())
-  respondedAt   DateTime?
-  signedAt      DateTime?
-  notes         String?
-
-  lease Lease @relation(fields: [leaseId], references: [id], onDelete: Cascade)
-
-  @@map("lease_renewals")
-}
-
-// Advanced Tenant Screening & Verification
-model TenantScreening {
-  id                      String               @id @default(cuid())
-  applicationId           String               @unique
-  applicantId             String
-  creditScore             Int?
-  creditReportUrl         String?
-  backgroundCheckStatus   BackgroundCheckStatus @default(PENDING)
-  backgroundCheckResults  String?              @db.Text
-  evictionHistory         String?              @db.Text
-  criminalHistory         String?              @db.Text
-  incomeVerificationStatus String?             @default("PENDING")
-  monthlyIncome           Float?
-  employmentStatus        String?
-  employerName            String?
-  employerPhone           String?
-  employmentDuration      Int?                 // Months
-  rentalHistory           String?              @db.Text
-  references              String?              @db.Text
-  biometricVerified       Boolean              @default(false)
-  biometricData           String?              @db.Text
-  fraudRiskScore          Float?               // AI fraud detection
-  overallRiskScore        Float?               // AI comprehensive risk
-  aiRecommendation        ApplicationDecision?
-  aiConfidenceScore       Float?
-  screeningProvider       String?              // TransUnion, etc.
-  screeningCost           Float?
-  completedAt             DateTime?
-  expiresAt               DateTime?
-  createdAt               DateTime             @default(now())
-  updatedAt               DateTime             @updatedAt
-
-  @@map("tenant_screenings")
-}
-
-model InsurancePolicy {
-  id              String             @id @default(cuid())
-  buildingId      String?
-  policyType      InsurancePolicyType
-  provider        String
-  policyNumber    String             @unique
-  coverage        Float
-  premium         Float
-  deductible      Float
-  startDate       DateTime
-  endDate         DateTime
-  renewalDate     DateTime
-  autoRenew       Boolean            @default(true)
-  status          PolicyStatus       @default(ACTIVE)
-  documentUrl     String?
-  claimsHistory   String?            @db.Text
-  aiRiskAssessment Float?
-  notes           String?            @db.Text
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
-
-  claims InsuranceClaim[]
-
-  @@map("insurance_policies")
-}
-
-model InsuranceClaim {
-  id            String         @id @default(cuid())
-  policyId      String
-  claimNumber   String         @unique
-  incidentDate  DateTime
-  claimDate     DateTime       @default(now())
-  claimType     String
-  description   String         @db.Text
-  claimAmount   Float
-  approvedAmount Float?
-  status        ClaimStatus    @default(FILED)
-  adjusterName  String?
-  adjusterContact String?
-  settlementDate DateTime?
-  paymentDate   DateTime?
-  documents     String?        @db.Text
-  notes         String?        @db.Text
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-
-  policy InsurancePolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
-
-  @@map("insurance_claims")
-}
-
-// Marketing & Lead Generation
-model MarketingCampaign {
-  id              String         @id @default(cuid())
-  name            String
-  type            CampaignType
-  channel         String         // Email, Social, PPC, etc.
-  targetAudience  String?
-  budget          Float?
-  startDate       DateTime
-  endDate         DateTime?
-  status          CampaignStatus @default(DRAFT)
-  impressions     Int            @default(0)
-  clicks          Int            @default(0)
-  conversions     Int            @default(0)
-  cost            Float          @default(0)
-  roi             Float?         // AI calculated ROI
-  aiOptimizationSuggestions String? @db.Text
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-
-  listings MarketingListing[]
-
-  @@map("marketing_campaigns")
-}
-
-model MarketingListing {
+model EnhancedMarketingListing {
   id              String    @id @default(cuid())
   campaignId      String?
   unitId          String
   title           String
-  description     String    @db.Text
-  aiGeneratedDesc String?   @db.Text
-  photos          String?   @db.Text // JSON array
-  virtualTourUrl  String?
+  description     String
+  aiOptimizedDesc String? // AI-generated description
+  photos          String? // JSON array of photo URLs
   videoUrl        String?
+  virtualTourUrl  String?
   price           Float
   availableDate   DateTime
-  syndicatedTo    String?   @db.Text // Zillow, Apartments.com, etc.
+  syndicatedTo    String? // JSON array of platforms (Zillow, Apartments.com, etc.)
   views           Int       @default(0)
   inquiries       Int       @default(0)
   applications    Int       @default(0)
-  seoScore        Float?    // AI SEO optimization score
-  performanceScore Float?   // AI performance metric
+  seoScore        Float? // AI SEO optimization score
   status          String    @default("ACTIVE")
   publishedAt     DateTime?
   expiresAt       DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  campaign MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  campaign EnhancedMarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
 
-  @@map("marketing_listings")
+  @@map("enhanced_marketing_listings")
 }
 
-// Predictive Maintenance & IoT
-model EquipmentAsset {
-  id                  String          @id @default(cuid())
-  buildingId          String
-  name                String
-  type                EquipmentType
-  manufacturer        String?
-  model               String?
-  serialNumber        String?
-  installationDate    DateTime
-  warrantyExpiry      DateTime?
-  lastServiceDate     DateTime?
-  nextServiceDate     DateTime?
-  lifespanYears       Int?
-  condition           AssetCondition  @default(GOOD)
-  replacementCost     Float?
-  depreciation        Float?
-  aiFailureProbability Float?         // AI predicted failure risk
-  aiMaintenanceSchedule String?       @db.Text
-  notes               String?         @db.Text
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
+// Yardi-Compatible: Comprehensive Compliance Tools
+model ComplianceProgram {
+  id           String   @id @default(cuid())
+  name         String
+  category     String // Fair Housing, Safety, Environmental, Financial
+  jurisdiction String // Federal, State, Local
+  description  String
+  requirements String // JSON requirements structure
+  checklist    String? // JSON compliance checklist
+  dueDates     String? // JSON recurring due dates
+  penaltyInfo  String? // JSON penalty information
+  isActive     Boolean  @default(true)
+  assignedTo   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  maintenanceHistory EquipmentMaintenance[]
-  iotReadings        EquipmentIoTReading[]
+  checks ComplianceCheck[]
 
-  @@map("equipment_assets")
+  @@map("compliance_programs")
 }
 
-model EquipmentMaintenance {
-  id            String   @id @default(cuid())
-  equipmentId   String
-  maintenanceType String
-  description   String
-  performedBy   String
-  cost          Float?
-  partsUsed     String?  @db.Text
-  performedAt   DateTime
-  nextDueDate   DateTime?
-  notes         String?  @db.Text
-  createdAt     DateTime @default(now())
+model AffordableHousing {
+  id                 String   @id @default(cuid())
+  buildingId         String
+  unitId             String?
+  programType        String // Section 8, LIHTC, Public Housing, etc.
+  incomeRestrictions String? // JSON income limits by household size
+  rentRestrictions   String? // JSON rent limits
+  complianceDate     DateTime
+  nextInspection     DateTime
+  status             String   @default("COMPLIANT")
+  inspector          String?
+  notes              String?
+  documents          String? // JSON compliance documents
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  equipment EquipmentAsset @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
 
-  @@map("equipment_maintenance")
+  @@map("affordable_housing")
 }
 
-model EquipmentIoTReading {
-  id          String   @id @default(cuid())
-  equipmentId String
-  metricType  String   // temperature, vibration, pressure, etc.
-  value       Float
-  unit        String
-  threshold   Float?
-  isAnomaly   Boolean  @default(false)
-  aiPrediction String? @db.Text
-  timestamp   DateTime @default(now())
-  createdAt   DateTime @default(now())
-
-  equipment EquipmentAsset @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
-
-  @@map("equipment_iot_readings")
-}
-
-// AI & Automation Engine
-model AIModel {
+// Yardi-Compatible: Portfolio-Level Analytics
+model PortfolioAnalytics {
   id              String   @id @default(cuid())
-  modelName       String
-  modelType       String   // Screening, Maintenance, Pricing, etc.
-  version         String
-  accuracy        Float?
-  trainingData    String?  @db.Text
-  lastTrainedAt   DateTime?
-  isActive        Boolean  @default(true)
-  parameters      String?  @db.Text // JSON
-  performanceMetrics String? @db.Text // JSON
+  portfolioId     String
+  reportDate      DateTime
+  metricCategory  String // Financial, Occupancy, Operations, Market
+  metrics         String // JSON key metrics
+  benchmarks      String? // JSON industry benchmarks
+  trends          String? // JSON trend analysis
+  recommendations String? // AI-generated recommendations
+  generatedBy     String
   createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
 
-  predictions AIPrediction[]
-
-  @@map("ai_models")
+  @@map("portfolio_analytics")
 }
 
-model AIPrediction {
+// Shiftsuite-Compatible: Board Meeting Management
+model BoardMeeting {
+  id             String    @id @default(cuid())
+  buildingId     String
+  title          String
+  description    String?
+  meetingType    String // Regular, Special, Annual, Emergency
+  scheduledDate  DateTime
+  startTime      DateTime
+  endTime        DateTime?
+  location       String?
+  virtualUrl     String?
+  agenda         String? // JSON agenda items
+  status         String    @default("SCHEDULED")
+  quorumRequired Int?
+  votingEnabled  Boolean   @default(false)
+  createdBy      String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  attendees MeetingAttendee[]
+  minutes   MeetingMinutes[]
+  votes     MeetingVote[]
+
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@map("board_meetings")
+}
+
+model MeetingAttendee {
+  id             String    @id @default(cuid())
+  meetingId      String
+  userId         String
+  attendeeType   String // Board Member, Owner, Guest, Manager
+  responseStatus String    @default("INVITED") // INVITED, ACCEPTED, DECLINED, TENTATIVE
+  attended       Boolean   @default(false)
+  votingRights   Boolean   @default(false)
+  proxyFor       String? // User ID they're proxy for
+  notes          String?
+  respondedAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  meeting BoardMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+  @@map("meeting_attendees")
+}
+
+model MeetingMinutes {
+  id          String    @id @default(cuid())
+  meetingId   String
+  content     String // JSON structured minutes
+  actionItems String? // JSON action items
+  approvals   String? // JSON approvals and resolutions
+  status      String    @default("DRAFT") // DRAFT, APPROVED, PUBLISHED
+  approvedBy  String?
+  approvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  meeting BoardMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@map("meeting_minutes")
+}
+
+// Shiftsuite-Compatible: Online Voting/Proxy Systems
+model MeetingVote {
+  id        String   @id @default(cuid())
+  meetingId String
+  agendaId  String? // Reference to agenda item
+  userId    String
+  voteType  String // FOR, AGAINST, ABSTAIN
+  proxyFor  String? // User ID they're voting for
+  weight    Float    @default(1) // Vote weight
+  timestamp DateTime @default(now())
+  notes     String?
+
+  meeting BoardMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, agendaId, userId])
+  @@map("meeting_votes")
+}
+
+model ProxyAssignment {
+  id           String    @id @default(cuid())
+  meetingId    String
+  principalId  String // Owner giving proxy
+  proxyId      String // Person receiving proxy
+  votingLimits String? // JSON voting restrictions
+  instructions String? // Specific voting instructions
+  isActive     Boolean   @default(true)
+  assignedAt   DateTime  @default(now())
+  revokedAt    DateTime?
+
+  @@unique([meetingId, principalId])
+  @@map("proxy_assignments")
+}
+
+// Shiftsuite-Compatible: Status Certificate Management
+model StatusCertificate {
+  id              String    @id @default(cuid())
+  buildingId      String
+  unitId          String?
+  requestId       String    @unique
+  requesterName   String
+  requesterEmail  String
+  requesterPhone  String?
+  purpose         String // Sale, Refinance, Legal
+  status          String    @default("REQUESTED")
+  certificateData String? // JSON certificate content
+  generatedAt     DateTime?
+  sentAt          DateTime?
+  fee             Float?
+  paidAt          DateTime?
+  dueDate         DateTime
+  expirationDate  DateTime?
+  createdBy       String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@map("status_certificates")
+}
+
+// Shiftsuite-Compatible: Virtual AGM Capabilities
+model VirtualAGM {
+  id               String    @id @default(cuid())
+  meetingId        String    @unique
+  webinarUrl       String?
+  dialInNumber     String?
+  accessCode       String?
+  moderatorCode    String?
+  recordingUrl     String?
+  chatEnabled      Boolean   @default(true)
+  qAndAMode        String    @default("MODERATED") // MODERATED, OPEN, DISABLED
+  pollEnabled      Boolean   @default(true)
+  screenShare      Boolean   @default(false)
+  maxAttendees     Int?
+  technicalSupport String? // Contact info
+  rehearsalTime    DateTime?
+  status           String    @default("SETUP")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@map("virtual_agm")
+}
+
+// CondoCommunities-Compatible: Community Calendar/Events
+model CommunityEvent {
+  id              String    @id @default(cuid())
+  buildingId      String
+  title           String
+  description     String?
+  eventType       String // Social, Meeting, Maintenance, Holiday
+  startDate       DateTime
+  endDate         DateTime
+  location        String?
+  maxAttendees    Int?
+  rsvpRequired    Boolean   @default(false)
+  rsvpDeadline    DateTime?
+  paymentRequired Boolean   @default(false)
+  fee             Float?
+  organizerId     String
+  organizerName   String?
+  photos          String? // JSON array of photo URLs
+  documents       String? // JSON array of document URLs
+  status          String    @default("PLANNED")
+  recurringRules  String? // JSON recurring event rules
+  reminders       String? // JSON reminder settings
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  attendees EventAttendee[]
+
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@map("community_events")
+}
+
+model EventAttendee {
+  id             String    @id @default(cuid())
+  eventId        String
+  userId         String?
+  guestName      String?
+  guestEmail     String?
+  response       String    @default("ATTENDING") // ATTENDING, DECLINED, MAYBE
+  numberOfGuests Int       @default(0)
+  notes          String?
+  rsvpedAt       DateTime  @default(now())
+  checkedIn      Boolean   @default(false)
+  checkedInAt    DateTime?
+
+  event CommunityEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@map("event_attendees")
+}
+
+// CondoCommunities-Compatible: Amenity Booking System
+model Amenity {
   id            String   @id @default(cuid())
-  modelId       String
-  entityType    String   // Tenant, Maintenance, Equipment, etc.
-  entityId      String
-  predictionType String
-  prediction    String   @db.Text // JSON
-  confidence    Float
-  actualOutcome String?  @db.Text
-  wasAccurate   Boolean?
+  buildingId    String
+  name          String
+  type          String // Gym, Party Room, Pool, Court, Lounge, etc.
+  description   String?
+  location      String?
+  capacity      Int?
+  bookingWindow Int // Days in advance users can book
+  maxDuration   Int // Maximum booking duration in hours
+  costPerHour   Float?
+  photos        String? // JSON array of photo URLs
+  rules         String? // JSON booking rules
+  availability  String? // JSON availability schedule
+  isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  model AIModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  bookings AmenityBooking[]
 
-  @@map("ai_predictions")
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@map("amenities")
 }
 
-model AutomatedWorkflow {
-  id              String           @id @default(cuid())
-  name            String
-  triggerType     TriggerType
-  triggerConditions String         @db.Text // JSON
-  actions         String           @db.Text // JSON
-  schedule        String?          // Cron expression
-  isActive        Boolean          @default(true)
-  executionCount  Int              @default(0)
-  lastExecutedAt  DateTime?
-  nextExecutionAt DateTime?
-  successRate     Float?
-  averageExecutionTime Int?        // Milliseconds
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+model AmenityBooking {
+  id             String    @id @default(cuid())
+  amenityId      String
+  residentId     String
+  startDate      DateTime
+  endDate        DateTime
+  status         String    @default("CONFIRMED") // CONFIRMED, CANCELLED, COMPLETED
+  numberOfPeople Int?      @default(1)
+  totalCost      Float?
+  paid           Boolean   @default(false)
+  notes          String?
+  approvedBy     String?
+  approvedAt     DateTime?
+  cancelledAt    DateTime?
+  cancelReason   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  executions WorkflowExecution[]
+  amenity Amenity @relation(fields: [amenityId], references: [id], onDelete: Cascade)
 
-  @@map("automated_workflows")
+  @@map("amenity_bookings")
 }
 
-model WorkflowExecution {
-  id          String   @id @default(cuid())
-  workflowId  String
-  status      String
-  startedAt   DateTime @default(now())
-  completedAt DateTime?
-  duration    Int?     // Milliseconds
-  result      String?  @db.Text // JSON
-  error       String?  @db.Text
-  createdAt   DateTime @default(now())
+// CondoCommunities-Compatible: Resident Directory
+model ResidentDirectory {
+  id               String    @id @default(cuid())
+  buildingId       String
+  unitId           String?
+  residentId       String
+  displayName      String // How name appears in directory
+  displayPhoto     String? // URL to photo
+  displayEmail     Boolean   @default(false)
+  displayPhone     Boolean   @default(false)
+  emergencyContact String? // JSON emergency contact info
+  pets             String? // JSON pet information
+  vehicles         String? // JSON vehicle information
+  privacySettings  String? // JSON privacy preferences
+  isVisible        Boolean   @default(true)
+  verifiedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  workflow AutomatedWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-
-  @@map("workflow_executions")
+  @@map("resident_directory")
 }
 
-// Communication & Notifications
-model NotificationTemplate {
-  id          String   @id @default(cuid())
-  name        String
-  type        String   // Email, SMS, Push, Portal
-  subject     String?
-  content     String   @db.Text
-  variables   String?  @db.Text // JSON
-  language    String   @default("en")
-  category    String
-  isActive    Boolean  @default(true)
-  usageCount  Int      @default(0)
-  aiGenerated Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+// CondoCommunities-Compatible: Emergency Alerts
+model EmergencyAlert {
+  id             String    @id @default(cuid())
+  buildingId     String
+  title          String
+  message        String
+  alertType      String // Emergency, Urgent, Information, Weather, Security
+  severity       String    @default("HIGH") // LOW, MEDIUM, HIGH, CRITICAL
+  targetAudience String? // JSON targeting criteria
+  sendToAll      Boolean   @default(true)
+  channels       String? // JSON notification channels (SMS, Email, Push, Portal)
+  scheduledAt    DateTime?
+  sentAt         DateTime?
+  expiresAt      DateTime?
+  requiresAck    Boolean   @default(false)
+  ackRequiredBy  DateTime?
+  attachments    String? // JSON attachment URLs
+  createdBy      String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  @@map("notification_templates")
+  acknowledgments AlertAcknowledgment[]
+
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@map("emergency_alerts")
 }
 
-model NotificationLog {
-  id          String   @id @default(cuid())
-  recipientId String
-  recipientType String // Tenant, User, Lead
-  channel     String   // Email, SMS, Push, Portal
-  subject     String?
-  content     String   @db.Text
-  status      String   // Sent, Delivered, Failed, Read
-  sentAt      DateTime @default(now())
-  deliveredAt DateTime?
-  readAt      DateTime?
-  error       String?
-  metadata    String?  @db.Text // JSON
-  createdAt   DateTime @default(now())
+model AlertAcknowledgment {
+  id             String   @id @default(cuid())
+  alertId        String
+  userId         String
+  acknowledgedAt DateTime @default(now())
+  method         String // Portal, SMS, Email
+  notes          String?
 
-  @@map("notification_logs")
+  alert EmergencyAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+
+  @@unique([alertId, userId])
+  @@map("alert_acknowledgments")
 }
 
-model ChatConversation {
+// CondoCommunities-Compatible: Custom Branding
+model BrandingSettings {
+  id             String   @id @default(cuid())
+  buildingId     String   @unique
+  primaryColor   String?  @default("#3B82F6")
+  secondaryColor String?  @default("#10B981")
+  accentColor    String?  @default("#F59E0B")
+  logoUrl        String?
+  faviconUrl     String?
+  customCSS      String?
+  customDomain   String?
+  theme          String   @default("DEFAULT") // DEFAULT, MODERN, CLASSIC, MINIMAL
+  fontFamily     String?  @default("Inter")
+  customFonts    String? // JSON custom font configurations
+  layout         String? // JSON layout preferences
+  features       String? // JSON enabled/disabled features
+  isActive       Boolean  @default(true)
+  updatedBy      String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@map("branding_settings")
+}
+
+// CondoCommunities-Compatible: Website Management
+model WebsiteManagement {
+  id            String    @id @default(cuid())
+  buildingId    String    @unique
+  domain        String?
+  subdomain     String?
+  title         String
+  tagline       String?
+  description   String?
+  homeContent   String? // JSON homepage content
+  pages         String? // JSON website pages structure
+  navigation    String? // JSON navigation menu
+  footerContent String? // JSON footer content
+  socialLinks   String? // JSON social media links
+  contactInfo   String? // JSON contact information
+  seoSettings   String? // JSON SEO configuration
+  analytics     String? // JSON analytics tracking
+  status        String    @default("DRAFT") // DRAFT, PUBLISHED, MAINTENANCE
+  publishedAt   DateTime?
+  lastModified  DateTime?
+  modifiedBy    String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@map("website_management")
+}
+
+// Calendar and Reminder System Models
+model CalendarEvent {
+  id               String    @id @default(cuid())
+  buildingId       String?
+  userId           String?
+  title            String
+  description      String?
+  eventType        String // DEADLINE, REMINDER, MEETING, INSPECTION, MAINTENANCE, COMPLIANCE, TAX, INSURANCE
+  priority         String    @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
+  startDate        DateTime
+  endDate          DateTime?
+  isAllDay         Boolean   @default(false)
+  location         String?
+  recurringRules   String? // JSON recurring rules (daily, weekly, monthly, yearly)
+  reminderSettings String? // JSON reminder configurations
+  attachments      String? // JSON array of document URLs
+  status           String    @default("SCHEDULED") // SCHEDULED, COMPLETED, CANCELLED, POSTPONED
+  completedAt      DateTime?
+  notes            String?
+  tags             String? // JSON array of tags
+  createdBy        String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  // Relations
+  building  Building?  @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  user      User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reminders Reminder[]
+
+  @@map("calendar_events")
+}
+
+model AnnualDeadline {
+  id              String   @id @default(cuid())
+  buildingId      String?
+  title           String
+  description     String?
+  deadlineType    String // ANNUAL_REPORT, TAX_FILING, INSURANCE_RENEWAL, SAFETY_INSPECTION, BUDGET_APPROVAL, COMPLIANCE_AUDIT
+  dueDate         DateTime
+  recurringMonth  Int // 1-12 for when this recurs annually
+  recurringDay    Int // 1-31 for when this recurs annually
+  advanceNotice   Int // Days in advance to start reminding
+  priority        String   @default("HIGH") // LOW, MEDIUM, HIGH, CRITICAL
+  jurisdiction    String? // Federal, State, Local requirements
+  requirements    String? // JSON detailed requirements
+  penaltyInfo     String? // JSON penalty information
+  isActive        Boolean  @default(true)
+  autoCreateEvent Boolean  @default(true) // Automatically create calendar events
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  building  Building?  @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  reminders Reminder[]
+
+  @@map("annual_deadlines")
+}
+
+model Reminder {
+  id             String    @id @default(cuid())
+  eventId        String?
+  deadlineId     String?
+  userId         String?
+  title          String
+  message        String?
+  reminderType   String // EMAIL, SMS, PUSH, IN_APP
+  scheduledFor   DateTime
+  sentAt         DateTime?
+  status         String    @default("PENDING") // PENDING, SENT, FAILED, DISMISSED
+  priority       String    @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
+  repeatPattern  String? // DAILY, WEEKLY, MONTHLY, YEARLY
+  maxOccurrences Int? // Maximum number of reminders to send
+  sentCount      Int       @default(0)
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Relations
+  event    CalendarEvent?  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  deadline AnnualDeadline? @relation(fields: [deadlineId], references: [id], onDelete: Cascade)
+  user     User?           @relation(fields: [userId], references: [id])
+
+  @@map("reminders")
+}
+
+model CalendarSettings {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  timezone         String   @default("UTC")
+  workingHours     String? // JSON working hours configuration
+  holidayRules     String? // JSON holiday rules
+  defaultReminders String? // JSON default reminder settings
+  colorScheme      String? // JSON color scheme for calendar
+  viewPreferences  String? // JSON calendar view preferences
+  syncSettings     String? // JSON calendar sync settings
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relation
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("calendar_settings")
+}
+
+// ============================================
+// AI AGENCY SYSTEM MODELS
+// ============================================
+
+// Orders for AI services
+model Order {
+  id            String    @id @default(cuid())
+  orderNumber   String    @unique
+  clientId      String
+  serviceType   String // WEBSITE, CHATBOT, PHONE_ASSISTANT, TAX_PREP, LEGAL, ACCOUNTING
+  status        String    @default("PENDING") // PENDING, PROCESSING, IN_PROGRESS, COMPLETED, FAILED, CANCELLED
+  priority      Int       @default(5) // 1-10, higher is more urgent
+  requirements  String // JSON: client requirements and specifications
+  deliverables  String? // JSON: what will be delivered
+  estimatedTime Int? // Estimated completion time in minutes
+  startedAt     DateTime?
+  completedAt   DateTime?
+  aiAgentId     String?
+  errorMessage  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  client        User                 @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  aiAgent       AIAgent?             @relation(fields: [aiAgentId], references: [id])
+  tasks         AITask[]
+  deliveries    Delivery[]
+  statusHistory OrderStatusHistory[]
+
+  @@map("orders")
+}
+
+// Order status change history
+model OrderStatusHistory {
   id         String   @id @default(cuid())
-  userId     String?
-  tenantId   String?
-  channel    String   // Web, SMS, WhatsApp
-  status     String   @default("ACTIVE")
-  subject    String?
-  priority   String   @default("NORMAL")
-  assignedTo String?
-  sentiment  String?  // AI sentiment analysis
-  tags       String?  // JSON array
-  startedAt  DateTime @default(now())
-  endedAt    DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  orderId    String
+  fromStatus String?
+  toStatus   String
+  reason     String?
+  changedBy  String? // User ID or "SYSTEM"
+  timestamp  DateTime @default(now())
 
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_status_history")
+}
+
+// AI Agents that fulfill orders
+model AIAgent {
+  id                String   @id @default(cuid())
+  name              String
+  type              String // WEBSITE_BUILDER, CHATBOT_CREATOR, PHONE_AI, TAX_SPECIALIST, LEGAL_AI, GENERAL
+  status            String   @default("AVAILABLE") // AVAILABLE, BUSY, OFFLINE, MAINTENANCE
+  capabilities      String // JSON: list of capabilities
+  currentLoad       Int      @default(0) // Number of active tasks
+  maxLoad           Int      @default(5) // Maximum concurrent tasks
+  performance       Float    @default(100.0) // Performance score 0-100
+  successRate       Float    @default(100.0) // Success rate percentage
+  avgCompletionTime Int? // Average completion time in minutes
+  clientId          String? // Dedicated client assignment (optional)
+  apiKey            String? // Encrypted AI API key
+  model             String   @default("claude-3-5-sonnet-20241022")
+  systemPrompt      String // Agent's system instructions
+  config            String? // JSON: additional configuration
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  orders       Order[]
+  tasks        AITask[]
+  interactions AIInteraction[]
+
+  @@map("ai_agents")
+}
+
+// Individual tasks within an order
+model AITask {
+  id          String    @id @default(cuid())
+  orderId     String
+  aiAgentId   String
+  taskType    String // ANALYZE, DESIGN, CODE, DEPLOY, TEST, REVIEW, COMMUNICATE
+  description String
+  status      String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, FAILED
+  input       String? // JSON: task input data
+  output      String? // JSON: task output/result
+  error       String?
+  retryCount  Int       @default(0)
+  maxRetries  Int       @default(3)
+  startedAt   DateTime?
+  completedAt DateTime?
+  duration    Int? // Duration in seconds
+  createdAt   DateTime  @default(now())
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  aiAgent AIAgent @relation(fields: [aiAgentId], references: [id])
+
+  @@map("ai_tasks")
+}
+
+// Deliveries to clients
+model Delivery {
+  id           String    @id @default(cuid())
+  orderId      String
+  deliveryType String // WEBSITE_URL, CHATBOT_EMBED, PHONE_NUMBER, DOCUMENT, CREDENTIALS
+  title        String
+  description  String?
+  content      String // JSON: delivery content
+  url          String?
+  credentials  String? // Encrypted credentials
+  instructions String? // How to use the delivery
+  files        String? // JSON: array of file URLs
+  status       String    @default("PENDING") // PENDING, DELIVERED, ACCEPTED, REJECTED
+  deliveredAt  DateTime?
+  acceptedAt   DateTime?
+  feedback     String?
+  createdAt    DateTime  @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("deliveries")
+}
+
+// AI-Client interactions
+model AIInteraction {
+  id        String    @id @default(cuid())
+  aiAgentId String
+  clientId  String
+  orderId   String?
+  type      String // CHAT, EMAIL, PHONE, NOTIFICATION, CLARIFICATION
+  direction String // INBOUND, OUTBOUND
+  subject   String?
+  content   String
+  metadata  String? // JSON: additional data
+  isRead    Boolean   @default(false)
+  readAt    DateTime?
+  timestamp DateTime  @default(now())
+
+  aiAgent AIAgent @relation(fields: [aiAgentId], references: [id])
+
+  @@index([clientId, timestamp])
+  @@map("ai_interactions")
+}
+
+// Service templates for AI agents
+model ServiceTemplate {
+  id             String   @id @default(cuid())
+  serviceType    String // WEBSITE, CHATBOT, PHONE_ASSISTANT, etc.
+  name           String
+  description    String
+  instructions   String // Detailed instructions for AI
+  requiredFields String // JSON: required input fields
+  estimatedTime  Int // Estimated time in minutes
+  complexity     String   @default("MEDIUM") // LOW, MEDIUM, HIGH
+  isActive       Boolean  @default(true)
+  version        String   @default("1.0")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([serviceType, name])
+  @@map("service_templates")
+}
+
+// AI Agent performance metrics
+model AgentMetrics {
+  id                 String   @id @default(cuid())
+  aiAgentId          String
+  date               DateTime @default(now())
+  ordersCompleted    Int      @default(0)
+  ordersFailed       Int      @default(0)
+  avgCompletionTime  Int? // Minutes
+  successRate        Float? // Percentage
+  clientSatisfaction Float? // 1-5 rating
+  tasksCompleted     Int      @default(0)
+  tasksFailed        Int      @default(0)
+
+  @@unique([aiAgentId, date])
+  @@map("agent_metrics")
+}
+
+// Service Catalog
+model Service {
+  id              String   @id @default(cuid())
+  name            String
+  slug            String   @unique
+  category        String   // TAX_PREP, LEGAL, ACCOUNTING, MAINTENANCE, INSURANCE, CONSULTING
+  description     String
+  features        String?  // JSON array of features
+  price           Float    // Monthly price
+  billingCycle    String   @default("MONTHLY") // MONTHLY, QUARTERLY, ANNUAL
+  isActive        Boolean  @default(true)
+  isProfessional  Boolean  @default(false) // Requires professional service
+  icon            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  subscriptions   Subscription[]
+  
+  @@map("services")
+}
+
+// User Subscriptions
+model Subscription {
+  id              String    @id @default(cuid())
+  userId          String
+  serviceId       String
+  status          String    @default("ACTIVE") // ACTIVE, CANCELLED, SUSPENDED, EXPIRED
+  startDate       DateTime  @default(now())
+  endDate         DateTime?
+  nextBillingDate DateTime?
+  amount          Float
+  billingCycle    String
+  autoRenew       Boolean   @default(true)
+  cancelledAt     DateTime?
+  cancelReason    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  service         Service   @relation(fields: [serviceId], references: [id])
+  invoices        Invoice[]
+  
+  @@map("subscriptions")
+}
+
+// Invoices
+model Invoice {
+  id              String    @id @default(cuid())
+  subscriptionId  String
+  userId          String
+  invoiceNumber   String    @unique
+  amount          Float
+  tax             Float?
+  total           Float
+  status          String    @default("PENDING") // PENDING, PAID, OVERDUE, CANCELLED
+  dueDate         DateTime
+  paidDate        DateTime?
+  paymentMethod   String?
+  stripeInvoiceId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  subscription    Subscription @relation(fields: [subscriptionId], references: [id])
+  
+  @@map("invoices")
+}
+
+// Admin Activity Log
+model AdminActivity {
+  id          String   @id @default(cuid())
+  adminId     String
+  action      String   // VIEW_USER, MODIFY_SERVICE, VIEW_STATS, etc.
+  targetType  String?  // USER, SERVICE, SUBSCRIPTION
+  targetId    String?
+  details     String?  // JSON details
+  ipAddress   String?
+  userAgent   String?
+  timestamp   DateTime @default(now())
+
+  @@index([adminId, timestamp])
+  @@map("admin_activities")
+}
+
+// System Analytics
+model SystemAnalytics {
+  id              String   @id @default(cuid())
+  metricType      String   // REVENUE, USERS, SUBSCRIPTIONS, SERVICES
+  metricValue     Float
+  metricData      String?  // JSON additional data
+  period          String   // DAILY, WEEKLY, MONTHLY
+  periodStart     DateTime
+  periodEnd       DateTime
+  createdAt       DateTime @default(now())
+
+  @@index([metricType, periodStart])
+  @@map("system_analytics")
+}
+
+
+// Additional Enums for New Features
+enum MeetingType {
+  REGULAR
+  SPECIAL
+  ANNUAL
+  EMERGENCY
+  WORKSHOP
+  COMMITTEE
+}
+
+enum AttendeeType {
+  BOARD_MEMBER
+  OWNER
+  GUEST
+  MANAGER
+  LEGAL_COUNSEL
+  CONTRACTOR
+}
+
+enum VoteType {
+  FOR
+  AGAINST
+  ABSTAIN
+}
+
+enum EventType {
+  SOCIAL
+  MEETING
+  MAINTENANCE
+  HOLIDAY
+  SPORTS
+  EDUCATIONAL
+  FUNDRAISER
+  COMMUNITY_SERVICE
+}
+
+enum AlertType {
+  EMERGENCY
+  URGENT
+  INFORMATION
+  WEATHER
+  SECURITY
+  MAINTENANCE
+  HEALTH
+}
+
+enum AlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// Property Score History Model
+model PropertyScoreHistory {
+  id               String   @id @default(cuid())
+  buildingId       String
+  previousScore    Float? // Previous overall score
+  newScore         Float? // New overall score
+  budgetScore      Float? // Budget adherence score
+  complianceScore  Float? // Compliance score
+  taxFilingScore   Float? // Tax filing score
+  maintenanceScore Float? // Maintenance score
+  legalScore       Float? // Legal/incidents score
+  changeReason     String? // Reason for score change
+  changeType       String // IMPROVEMENT, DECLINE, NO_CHANGE
+  breakdown        String? // JSON breakdown of all scores
+  calculatedAt     DateTime @default(now())
+
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@map("property_score_history")
+}
+
+// AI Chat System Models
+model ChatConversation {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages ChatMessage[]
 
   @@map("chat_conversations")
 }
 
 model ChatMessage {
-  id             String   @id @default(cuid())
-  conversationId String
-  senderId       String
-  senderType     String   // User, Tenant, AI
-  message        String   @db.Text
-  attachments    String?  @db.Text // JSON
-  isFromAI       Boolean  @default(false)
-  sentiment      String?
-  intent         String?  // AI detected intent
-  confidence     Float?
-  timestamp      DateTime @default(now())
-  readAt         DateTime?
-  createdAt      DateTime @default(now())
+  id               String   @id @default(cuid())
+  conversationId   String
+  userId           String
+  message          String
+  response         String?
+  intent           String?
+  sentiment        String?
+  confidence       Float?
+  suggestedActions String? // JSON array of suggested actions
+  createdAt        DateTime @default(now())
 
+  // Relations
   conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  User         User             @relation(fields: [userId], references: [id])
 
   @@map("chat_messages")
 }
 
-// Compliance & Audit
-model ComplianceRule {
-  id          String   @id @default(cuid())
-  ruleName    String
-  category    String   // Fair Housing, Safety, Environmental
-  jurisdiction String  // Federal, State, Local
-  description String   @db.Text
-  requirements String  @db.Text
-  effectiveDate DateTime
-  expiryDate  DateTime?
-  penalties   String?  @db.Text
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
 
-  checks ComplianceCheck[]
+// Building Automation Systems
 
-  @@map("compliance_rules")
+// Building Automation Systems
+model BuildingSystem {
+  id           String   @id @default(cuid())
+  buildingId   String
+  systemType   String   // HVAC, SECURITY, CAMERA, ACCESS_CONTROL, FIRE, ELEVATOR, LIGHTING, ENERGY
+  name         String
+  manufacturer String?
+  model        String?
+  ipAddress    String?
+  apiEndpoint  String?
+  mqttTopic    String?
+  status       String   @default("OFFLINE") // ONLINE, OFFLINE, MAINTENANCE, ERROR
+  lastPing     DateTime?
+  config       String?  // JSON configuration
+  credentials  String?  // Encrypted credentials
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  building     Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  devices      Device[]
+  sensors      Sensor[]
+  alerts       SystemAlert[]
+  logs         SystemLog[]
+
+  @@map("building_systems")
 }
 
-model ComplianceCheck {
-  id          String   @id @default(cuid())
-  ruleId      String
-  entityType  String   // Building, Unit, Lease, Application
-  entityId    String
-  checkDate   DateTime @default(now())
-  status      String   // Compliant, Non-Compliant, Review
-  findings    String?  @db.Text
-  severity    String?
-  remediation String?  @db.Text
-  resolvedAt  DateTime?
-  checkedBy   String?  // User or AI
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
 
-  rule ComplianceRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+// Individual Devices
+model Device {
+  id             String   @id @default(cuid())
+  systemId       String
+  deviceType     String   // CAMERA, DOOR_LOCK, THERMOSTAT, SENSOR, ACTUATOR
+  name           String
+  location       String?
+  floor          String?
+  zone           String?
+  deviceId       String   // Manufacturer device ID
+  status         String   @default("OFFLINE")
+  currentState   String?  // JSON current state
+  capabilities   String?  // JSON capabilities
+  lastUpdate     DateTime?
+  batteryLevel   Float?
+  firmwareVersion String?
+  isOnline       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  @@map("compliance_checks")
+  system         BuildingSystem @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  readings       SensorReading[]
+  commands       DeviceCommand[]
+
+  @@map("devices")
 }
 
-model AuditLog {
-  id          String   @id @default(cuid())
-  userId      String?
-  action      String
-  entityType  String
-  entityId    String
-  changes     String?  @db.Text // JSON
-  ipAddress   String?
-  userAgent   String?
-  timestamp   DateTime @default(now())
-  createdAt   DateTime @default(now())
+// Sensors (Temperature, Humidity, Motion, etc.)
+model Sensor {
+  id           String   @id @default(cuid())
+  systemId     String
+  sensorType   String   // TEMPERATURE, HUMIDITY, MOTION, SMOKE, CO2, OCCUPANCY
+  name         String
+  location     String
+  unit         String?  // Celsius, Fahrenheit, %, ppm
+  minValue     Float?
+  maxValue     Float?
+  threshold    Float?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  @@index([userId])
-  @@index([entityType, entityId])
-  @@index([timestamp])
-  @@map("audit_logs")
+  system       BuildingSystem @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  readings     SensorReading[]
+
+  @@map("sensors")
 }
 
-// Integration & API
-model Integration {
-  id            String   @id @default(cuid())
-  name          String
-  type          String   // Accounting, Payment, Screening, etc.
-  provider      String
-  credentials   String   @db.Text // Encrypted
-  configuration String?  @db.Text // JSON
-  status        String   @default("ACTIVE")
-  lastSyncAt    DateTime?
-  syncFrequency String?  // Cron or interval
-  errorCount    Int      @default(0)
-  lastError     String?  @db.Text
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+// Sensor Readings (Time-series data)
+model SensorReading {
+  id         String   @id @default(cuid())
+  sensorId   String?
+  deviceId   String?
+  value      Float
+  unit       String?
+  quality    String?  // GOOD, UNCERTAIN, BAD
+  timestamp  DateTime @default(now())
 
-  syncLogs IntegrationSyncLog[]
+  sensor     Sensor?  @relation(fields: [sensorId], references: [id], onDelete: Cascade)
+  device     Device?  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
-  @@map("integrations")
+  @@index([sensorId, timestamp])
+  @@index([deviceId, timestamp])
+  @@map("sensor_readings")
 }
 
-model IntegrationSyncLog {
-  id            String   @id @default(cuid())
-  integrationId String
-  syncType      String
-  direction     String   // Inbound, Outbound
-  recordsProcessed Int   @default(0)
-  recordsSuccess Int     @default(0)
-  recordsFailed Int      @default(0)
-  startedAt     DateTime @default(now())
-  completedAt   DateTime?
-  duration      Int?     // Seconds
-  status        String
-  errorDetails  String?  @db.Text
-  createdAt     DateTime @default(now())
-
-  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
-
-  @@map("integration_sync_logs")
-}
-
-// Analytics & Business Intelligence
-model AnalyticsDashboard {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  layout      String   @db.Text // JSON
-  widgets     String   @db.Text // JSON
-  filters     String?  @db.Text // JSON
-  isPublic    Boolean  @default(false)
-  ownerId     String
-  sharedWith  String?  @db.Text // JSON array of user IDs
-  refreshRate Int?     // Seconds
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@map("analytics_dashboards")
-}
-
-model CustomReport {
-  id          String   @id @default(cuid())
-  name        String
-  category    String
-  description String?
-  query       String   @db.Text // SQL or JSON query
-  parameters  String?  @db.Text // JSON
-  schedule    String?  // Cron expression
-  recipients  String?  @db.Text // JSON array
-  format      String   @default("PDF") // PDF, Excel, CSV
-  isActive    Boolean  @default(true)
-  createdBy   String
-  lastRunAt   DateTime?
-  nextRunAt   DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  executions ReportExecution[]
-
-  @@map("custom_reports")
-}
-
-model ReportExecution {
-  id          String   @id @default(cuid())
-  reportId    String
-  executedBy  String?  // User or System
-  parameters  String?  @db.Text // JSON
-  startedAt   DateTime @default(now())
+// Device Commands (Control actions)
+model DeviceCommand {
+  id          String    @id @default(cuid())
+  deviceId    String
+  command     String    // LOCK, UNLOCK, SET_TEMPERATURE, TURN_ON, TURN_OFF
+  parameters  String?   // JSON parameters
+  status      String    @default("PENDING") // PENDING, SENT, ACKNOWLEDGED, COMPLETED, FAILED
+  issuedBy    String
+  issuedAt    DateTime  @default(now())
   completedAt DateTime?
-  status      String
-  fileUrl     String?
-  error       String?  @db.Text
-  createdAt   DateTime @default(now())
+  result      String?   // JSON result
+  error       String?
 
-  report CustomReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  device      Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
-  @@map("report_executions")
+  @@map("device_commands")
 }
 
-// New Enums
-enum VendorCategory {
-  PLUMBING
-  ELECTRICAL
-  HVAC
-  LANDSCAPING
-  CLEANING
-  PEST_CONTROL
-  SECURITY
-  CONSTRUCTION
-  PAINTING
-  ROOFING
-  APPLIANCE_REPAIR
-  LOCKSMITH
-  OTHER
+// System Alerts
+model SystemAlert {
+  id          String    @id @default(cuid())
+  systemId    String
+  alertType   String    // CRITICAL, WARNING, INFO
+  category    String    // SECURITY, HVAC, FIRE, ENERGY
+  title       String
+  message     String
+  severity    Int       // 1-5
+  isResolved  Boolean   @default(false)
+  resolvedBy  String?
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  system      BuildingSystem @relation(fields: [systemId], references: [id], onDelete: Cascade)
+
+  @@map("system_alerts")
 }
 
-enum ContractType {
-  SERVICE
-  MAINTENANCE
-  SUPPLY
-  CONSTRUCTION
-  CONSULTING
-  PROPERTY_MANAGEMENT
-  OTHER
+// System Logs (Audit trail)
+model SystemLog {
+  id         String   @id @default(cuid())
+  systemId   String
+  action     String
+  details    String?  // JSON details
+  userId     String?
+  ipAddress  String?
+  timestamp  DateTime @default(now())
+
+  system     BuildingSystem @relation(fields: [systemId], references: [id], onDelete: Cascade)
+
+  @@index([systemId, timestamp])
+  @@map("system_logs")
 }
 
-enum ContractStatus {
-  DRAFT
-  ACTIVE
-  EXPIRED
-  TERMINATED
-  RENEWED
-  UNDER_REVIEW
+
+
+
+// Compliance & Emergency Systems
+
+model Vendor {
+  id              String   @id @default(cuid())
+  name            String
+  email           String
+  phone           String?
+  category        String   // Plumbing, Electrical, HVAC, etc.
+  insuranceExpiry DateTime
+  wsibExpiry      DateTime?
+  insuranceDocUrl String?
+  wsibDocUrl      String?
+  status          String   @default("ACTIVE") // ACTIVE, NON_COMPLIANT, SUSPENDED
+  autoNotify      Boolean  @default(true)
+  lastNotifiedAt  DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  buildingId      String
+  building        Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@map("vendors")
 }
 
-enum InvoiceStatus {
-  PENDING
-  SENT
-  PAID
-  OVERDUE
-  CANCELLED
-  DISPUTED
+model EmergencyRegistry {
+  id               String   @id @default(cuid())
+  unitId           String
+  type             String   // CHILD, PET, ASSISTANCE_REQUIRED, ELDERLY
+  name             String
+  details          String?  // Medical conditions, breed, age, etc.
+  emergencyContact String? // Name & Phone
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  unit             Unit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@map("emergency_registry")
 }
 
-enum TransactionType {
-  INCOME
-  EXPENSE
-  TRANSFER
-  ADJUSTMENT
+// Shiftsuite-Compatible: Visitor Parking
+model VisitorPermit {
+  id           String   @id @default(cuid())
+  unitId       String
+  licensePlate String
+  visitorName  String
+  makeModel    String?
+  startDate    DateTime
+  endDate      DateTime
+  status       String   @default("ACTIVE") // ACTIVE, EXPIRED, CANCELLED
+  notes        String?
+  createdBy    String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  unit Unit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@map("visitor_permits")
 }
 
-enum TransactionCategory {
-  RENT_INCOME
-  LATE_FEE
-  SECURITY_DEPOSIT
-  MAINTENANCE
-  UTILITIES
-  INSURANCE
-  TAXES
-  MANAGEMENT_FEE
-  MARKETING
-  LEGAL
-  ADMINISTRATIVE
-  CAPITAL_IMPROVEMENT
-  OTHER
-}
+// CondoCommunities-Compatible: Package Tracking
+model Package {
+  id             String    @id @default(cuid())
+  unitId         String
+  carrier        String // UPS, FedEx, Amazon, USPS, DHL, Other
+  trackingNumber String?
+  recipientName  String?
+  status         String    @default("RECEIVED") // RECEIVED, NOTIFIED, PICKED_UP, RETURNED
+  receivedAt     DateTime  @default(now())
+  receivedBy     String // Concierge/Staff ID
+  pickedUpAt     DateTime?
+  pickedUpBy     String? // Resident name/signature
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-enum FinancialReportType {
-  PROFIT_LOSS
-  BALANCE_SHEET
-  CASH_FLOW
-  BUDGET_VARIANCE
-  RENT_ROLL
-  AR_AGING
-  AP_AGING
-  TAX_SUMMARY
-  CUSTOM
-}
+  unit Unit @relation(fields: [unitId], references: [id], onDelete: Cascade)
 
-enum LeaseType {
-  FIXED_TERM
-  MONTH_TO_MONTH
-  SUBLEASE
-  COMMERCIAL
-  SHORT_TERM
-}
-
-enum LeaseStatus {
-  DRAFT
-  PENDING_SIGNATURE
-  ACTIVE
-  EXPIRING_SOON
-  EXPIRED
-  TERMINATED
-  RENEWED
-}
-
-enum InsurancePolicyType {
-  PROPERTY
-  LIABILITY
-  WORKERS_COMP
-  UMBRELLA
-  FLOOD
-  EARTHQUAKE
-  BUSINESS_INTERRUPTION
-  CYBER
-}
-
-enum PolicyStatus {
-  ACTIVE
-  EXPIRED
-  CANCELLED
-  PENDING_RENEWAL
-  LAPSED
-}
-
-enum ClaimStatus {
-  FILED
-  UNDER_REVIEW
-  APPROVED
-  DENIED
-  SETTLED
-  CLOSED
-}
-
-enum CampaignType {
-  LISTING
-  BRAND_AWARENESS
-  LEAD_GENERATION
-  TENANT_RETENTION
-  REFERRAL
-  SEASONAL
-}
-
-enum CampaignStatus {
-  DRAFT
-  SCHEDULED
-  ACTIVE
-  PAUSED
-  COMPLETED
-  CANCELLED
-}
-
-enum EquipmentType {
-  HVAC
-  BOILER
-  WATER_HEATER
-  ELEVATOR
-  GENERATOR
-  PUMP
-  FIRE_SAFETY
-  SECURITY_SYSTEM
-  ACCESS_CONTROL
-  POOL_EQUIPMENT
-  APPLIANCE
-  OTHER
-}
-
-enum AssetCondition {
-  EXCELLENT
-  GOOD
-  FAIR
-  POOR
-  CRITICAL
-  REPLACE_SOON
-}
-
-enum TriggerType {
-  SCHEDULED
-  EVENT_BASED
-  CONDITIONAL
-  MANUAL
-  WEBHOOK
+  @@map("packages")
 }

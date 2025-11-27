@@ -5,6 +5,8 @@ import { rentPricingInputSchema } from "@/lib/validation/schemas";
 import { ok, created, badRequest, serverError } from "@/lib/api-response";
 import { logger } from "@/lib/logger";
 import { z } from "zod";
+import { RentPricingAI } from '@/lib/services/ai/ai-service';
+import { prisma } from '@/lib/db';
 
 // POST /api/ai/rent-pricing - Calculate optimal rent for a unit
 export async function POST(request: NextRequest) {
@@ -48,59 +50,46 @@ export async function POST(request: NextRequest) {
       return badRequest("Unit not found or access denied");
     }
 
-    // TODO: Import and call RentPricingAI.calculateOptimalRent from AI service
-    // const aiResult = await RentPricingAI.calculateOptimalRent(body);
+    const pricingAI = new RentPricingAI();
+    const pricingResult = await pricingAI.calculateOptimalRent({
+      bedrooms: unit.bedrooms,
+      bathrooms: unit.bathrooms,
+      squareFeet: unit.squareFeet,
+      location: { city: unit.building.city, state: unit.building.state, zipCode: unit.building.zipCode },
+      amenities: unit.amenities || [],
+      condition: unit.condition || 'GOOD',
+      yearBuilt: unit.building.yearBuilt,
+      currentRent: unit.rentAmount,
+      competitorRents: body.marketData?.similarUnits?.map(unit => ({
+        rent: unit.rent,
+        bedrooms: body.bedrooms, // Assuming same as current unit, or could be derived
+        distance: unit.distance,
+      })) || [],
+    });
 
-    // For now, return a mock response that matches the expected AI service format
-    const baseRent = body.currentRent || 1500; // Default base rent
-    const sqftPrice = baseRent / body.squareFootage;
-    const marketAdjustment = (Math.random() - 0.5) * 0.2; // ±10% market adjustment
-    const amenityMultiplier = body.amenities && body.amenities.length > 3 ? 1.05 : 1.0;
-
-    const recommendedRent = Math.round(baseRent * (1 + marketAdjustment) * amenityMultiplier);
-
-    const mockResult = {
-      currentRent: body.currentRent,
-      recommendedRent,
-      pricePerSqft: Math.round((recommendedRent / body.squareFootage) * 100) / 100,
-      marketAnalysis: {
-        averageRent: Math.round(recommendedRent * 0.95),
-        medianRent: Math.round(recommendedRent * 1.02),
-        marketTrend: Math.random() > 0.5 ? "INCREASING" : "STABLE",
-        comparableUnits: [
-          {
-            distance: 0.2,
-            rent: Math.round(recommendedRent * 0.95),
-            bedrooms: body.bedrooms,
-            bathrooms: body.bathrooms,
-          },
-          {
-            distance: 0.5,
-            rent: Math.round(recommendedRent * 1.05),
-            bedrooms: body.bedrooms,
-            bathrooms: body.bathrooms,
-          },
-        ],
+    // Store pricing analysis in database for historical tracking
+    await prisma.aIResult.create({
+      data: {
+        requestKey: `rent-pricing-${unit.id}-${Date.now()}`,
+        result: JSON.stringify(pricingResult),
+        model: 'RentPricingAI',
+        createdAt: new Date(),
       },
-      reasoning: [
-        `Based on ${body.squareFootage} sqft at $${sqftPrice.toFixed(2)}/sqft`,
-        "Market analysis shows similar units renting for $50-100 more per month",
-        `${body.bedrooms} bedroom units in this area command a premium`,
-        "Building amenities and location support higher pricing",
-      ],
-      confidence: 0.82,
-      lastUpdated: new Date().toISOString(),
-      dataPoints: 15,
-    };
+    });
 
     logger.info("Rent pricing analysis completed", {
       userId: user.id,
       unitId: body.unitId,
-      currentRent: body.currentRent,
-      recommendedRent: mockResult.recommendedRent,
+      currentRent: unit.rentAmount,
+      recommendedRent: pricingResult.recommendedRent,
     });
 
-    return created(mockResult, "Rent pricing analysis completed successfully");
+    return created({
+      ...pricingResult,
+      demandForecast: pricingResult.demandForecast,
+      seasonalAdjustment: pricingResult.seasonalAdjustment,
+      recommendations: pricingResult.recommendations,
+    }, "Rent pricing analysis completed successfully");
   } catch (error) {
     logger.error("Failed to calculate rent pricing", { error });
     return serverError(error);
@@ -142,40 +131,49 @@ export async function PUT(request: NextRequest) {
       return badRequest("Some units not found or access denied");
     }
 
-    // TODO: Import and call RentPricingAI.calculateBulkOptimalRent from AI service
-    // const aiResults = await RentPricingAI.calculateBulkOptimalRent(body);
+    const pricingAI = new RentPricingAI();
+    const pricingResults = await Promise.all(
+      units.map(async (unit) => {
+        const result = await pricingAI.calculateOptimalRent({
+          bedrooms: unit.bedrooms,
+          bathrooms: unit.bathrooms,
+          squareFeet: unit.squareFeet,
+          location: { city: unit.building.city, state: unit.building.state, zipCode: unit.building.zipCode },
+          amenities: unit.amenities || [],
+          condition: unit.condition || 'GOOD',
+          yearBuilt: unit.building.yearBuilt,
+          currentRent: unit.rentAmount,
+          competitorRents: [], // For bulk, no specific market data, could be enhanced
+        });
 
-    // For now, return mock responses for each unit
-    const mockResults = units.map(unit => {
-      const baseRent = unit.rentAmount || 1500;
-      const marketAdjustment = (Math.random() - 0.5) * 0.15; // ±7.5% adjustment
-      const recommendedRent = Math.round(baseRent * (1 + marketAdjustment));
+        // Store each pricing analysis
+        await prisma.aIResult.create({
+          data: {
+            requestKey: `rent-pricing-bulk-${unit.id}-${Date.now()}`,
+            result: JSON.stringify(result),
+            model: 'RentPricingAI',
+            createdAt: new Date(),
+          },
+        });
 
-      return {
-        unitId: unit.id,
-        unitNumber: unit.unitNumber,
-        currentRent: unit.rentAmount,
-        recommendedRent,
-        pricePerSqft: unit.squareFootage
-          ? Math.round((recommendedRent / unit.squareFootage) * 100) / 100
-          : 0,
-        confidence: 0.75 + Math.random() * 0.2, // 0.75-0.95
-        potentialIncrease: recommendedRent - (unit.rentAmount || 0),
-        reasoning: [
-          "Market analysis indicates room for rent adjustment",
-          "Comparable units in area support higher pricing",
-          "Unit condition and amenities justify premium pricing",
-        ],
-      };
-    });
+        return {
+          unitId: unit.id,
+          unitNumber: unit.unitNumber,
+          ...result,
+          demandForecast: result.demandForecast,
+          seasonalAdjustment: result.seasonalAdjustment,
+          recommendations: result.recommendations,
+        };
+      })
+    );
 
     // Calculate portfolio impact
     const totalCurrentRent = units.reduce((sum, unit) => sum + (unit.rentAmount || 0), 0);
-    const totalRecommendedRent = mockResults.reduce((sum, result) => sum + result.recommendedRent, 0);
+    const totalRecommendedRent = pricingResults.reduce((sum, result) => sum + result.recommendedRent, 0);
     const portfolioIncrease = totalRecommendedRent - totalCurrentRent;
 
     const bulkResult = {
-      units: mockResults,
+      units: pricingResults,
       portfolioAnalysis: {
         totalCurrentRent,
         totalRecommendedRent,

@@ -1,47 +1,90 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';
+import { Tenant } from '@/lib/types';
 
 // Generic API hook
 export function useApi<T>(url: string, options?: RequestInit) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { data: session } = useSession();
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const retryCountRef = useRef(0);
+  const maxRetries = 3;
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
+      // Cancel previous request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+
+      abortControllerRef.current = new AbortController();
+
+      // Get auth token from session
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...options?.headers as Record<string, string>,
+      };
+
+      // Add authorization header if session exists
+      if (session?.user) {
+        headers['Authorization'] = `Bearer ${session.user.id}`;
+      }
+
       const response = await fetch(url, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...options?.headers,
-        },
+        headers,
         ...options,
+        signal: abortControllerRef.current.signal,
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
       }
 
       const result = await response.json();
 
       if (result.success) {
         setData(result.data);
+        retryCountRef.current = 0; // Reset retry count on success
       } else {
         throw new Error(result.error?.message || 'API request failed');
       }
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        // Request was cancelled, don't treat as error
+        return;
+      }
+
       const errorMessage = error instanceof Error ? error.message : 'An error occurred';
       setError(errorMessage);
       console.error('API request failed:', error);
+
+      // Retry logic for network failures
+      if (retryCountRef.current < maxRetries && (error instanceof TypeError || errorMessage.includes('fetch'))) {
+        retryCountRef.current++;
+        setTimeout(() => fetchData(), 1000 * retryCountRef.current); // Exponential backoff
+        return;
+      }
     } finally {
       setLoading(false);
     }
-  }, [url, options]);
+  }, [url, options, session]);
 
   useEffect(() => {
     fetchData();
+
+    // Cleanup on unmount
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [fetchData]);
 
   return { data, loading, error, refetch: fetchData };
@@ -66,7 +109,12 @@ export function useTenants(filters?: {
   const queryString = queryParams.toString();
   const url = `/api/tenants${queryString ? `?${queryString}` : ''}`;
 
-  return useApi(url);
+  return useApi<Tenant[]>(url) as {
+    data: Tenant[] | null;
+    loading: boolean;
+    error: string | null;
+    refetch: () => void;
+  };
 }
 
 // Units hook
@@ -162,6 +210,7 @@ export function useMutation<TData = any, TVariables = any>() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<TData | null>(null);
+  const { data: session } = useSession();
 
   const mutate = useCallback(async (
     url: string,
@@ -178,11 +227,19 @@ export function useMutation<TData = any, TVariables = any>() {
 
       const method = options?.method || 'POST';
 
+      // Get auth token from session
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      // Add authorization header if session exists
+      if (session?.user) {
+        headers['Authorization'] = `Bearer ${session.user.id}`;
+      }
+
       const response = await fetch(url, {
         method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify(variables),
       });
 
@@ -205,7 +262,7 @@ export function useMutation<TData = any, TVariables = any>() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [session]);
 
   return { mutate, loading, error, data };
 }
@@ -213,14 +270,14 @@ export function useMutation<TData = any, TVariables = any>() {
 // Optimistic updates hook
 export function useOptimisticUpdate<T extends { id: string }>(
   initialData: T[],
-  setData: (data: T[]) => void
+  setData: React.Dispatch<React.SetStateAction<T[]>>
 ) {
   const updateOptimistically = useCallback((
     id: string,
     updateFn: (item: T) => T
   ) => {
-    setData(prevData =>
-      prevData.map(item =>
+    setData((prevData: T[]) =>
+      prevData.map((item: T) =>
         item.id === id ? updateFn(item) : item
       )
     );

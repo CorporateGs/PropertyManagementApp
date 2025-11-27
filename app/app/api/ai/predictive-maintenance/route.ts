@@ -5,6 +5,8 @@ import { ok, created, badRequest, serverError } from "@/lib/api-response";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { z } from "zod";
+import { PredictiveMaintenanceAI } from '@/lib/services/ai/ai-service';
+import { WorkflowEngine } from '@/lib/services/automation/workflow-engine';
 
 // POST /api/ai/predictive-maintenance - Predict equipment failure
 export async function POST(request: NextRequest) {
@@ -89,72 +91,87 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // TODO: Import and call PredictiveMaintenanceAI.predictEquipmentFailure from AI service
-    // const prediction = await PredictiveMaintenanceAI.predictEquipmentFailure(body);
+    const maintenanceAI = new PredictiveMaintenanceAI();
+    const prediction = await maintenanceAI.predictEquipmentFailure({
+      type: body.equipmentType,
+      installationDate: new Date(body.installationDate || Date.now()),
+      lastServiceDate: body.lastMaintenanceDate ? new Date(body.lastMaintenanceDate) : undefined,
+      recentReadings: body.currentReadings ? [
+        body.currentReadings.temperature !== undefined ? {
+          metricType: 'temperature',
+          value: body.currentReadings.temperature,
+          unit: 'C',
+          timestamp: new Date(),
+        } : null,
+        body.currentReadings.pressure !== undefined ? {
+          metricType: 'pressure',
+          value: body.currentReadings.pressure,
+          unit: 'psi',
+          timestamp: new Date(),
+        } : null,
+        body.currentReadings.voltage !== undefined ? {
+          metricType: 'voltage',
+          value: body.currentReadings.voltage,
+          unit: 'V',
+          timestamp: new Date(),
+        } : null,
+        body.currentReadings.current !== undefined ? {
+          metricType: 'current',
+          value: body.currentReadings.current,
+          unit: 'A',
+          timestamp: new Date(),
+        } : null,
+        body.currentReadings.vibration !== undefined ? {
+          metricType: 'vibration',
+          value: body.currentReadings.vibration,
+          unit: 'Hz',
+          timestamp: new Date(),
+        } : null,
+        body.currentReadings.runtime !== undefined ? {
+          metricType: 'runtime',
+          value: body.currentReadings.runtime,
+          unit: 'hours',
+          timestamp: new Date(),
+        } : null,
+      ].filter(Boolean) as any[] : undefined,
+    });
 
-    // For now, return mock prediction data
-    const mockPrediction = {
-      equipmentType: body.equipmentType,
-      predictionId: `pred_${Date.now()}`,
-      riskLevel: ["LOW", "MEDIUM", "HIGH", "CRITICAL"][Math.floor(Math.random() * 4)] as "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
-      failureProbability: Math.floor(Math.random() * 100), // 0-100%
-      estimatedDaysToFailure: Math.floor(Math.random() * 365) + 1, // 1-365 days
-      confidence: Math.floor(Math.random() * 30) + 70, // 70-100%
-      factors: [
-        "Age of equipment indicates moderate risk",
-        "Recent maintenance history is good",
-        "Usage patterns suggest normal wear",
-        "Environmental conditions are favorable",
-      ],
-      recommendations: [
-        "Schedule preventive maintenance within 30 days",
-        "Monitor performance metrics closely",
-        "Consider equipment upgrade in 6-12 months",
-        "Keep spare parts inventory for critical components",
-      ],
-      maintenanceCost: Math.floor(Math.random() * 5000) + 500, // $500-$5500
-      downtimeCost: Math.floor(Math.random() * 2000) + 200, // $200-$2200
-      analyzedAt: new Date().toISOString(),
-    };
+    await prisma.predictiveMaintenance.create({
+      data: {
+        equipmentType: body.equipmentType,
+        equipmentId: body.equipmentId,
+        unitId: body.unitId,
+        buildingId: body.buildingId,
+        failureProbability: prediction.failureProbability,
+        expectedFailureDate: prediction.expectedFailureDate,
+        urgency: prediction.urgency,
+        recommendedActions: JSON.stringify(prediction.recommendedActions),
+        estimatedCost: prediction.estimatedCost,
+        reasoning: prediction.reasoning,
+        createdBy: user.id,
+      },
+    });
 
-    // TODO: Persist prediction to database
-    // await prisma.aiPrediction.create({
-    //   data: {
-    //     type: "EQUIPMENT_FAILURE",
-    //     entityType: body.unitId ? "UNIT" : "BUILDING",
-    //     entityId: body.unitId || body.buildingId,
-    //     predictionData: mockPrediction,
-    //     riskLevel: mockPrediction.riskLevel,
-    //     confidence: mockPrediction.confidence,
-    //     estimatedDate: new Date(Date.now() + mockPrediction.estimatedDaysToFailure * 24 * 60 * 60 * 1000),
-    //   },
-    // });
-
-    // TODO: If risk level is HIGH or CRITICAL, auto-create maintenance request
-    // if (mockPrediction.riskLevel === "HIGH" || mockPrediction.riskLevel === "CRITICAL") {
-    //   await prisma.maintenanceRequest.create({
-    //     data: {
-    //       unitId: body.unitId,
-    //       title: `Predictive Maintenance: ${body.equipmentType}`,
-    //       description: `AI prediction indicates ${mockPrediction.riskLevel} risk of failure in ${mockPrediction.estimatedDaysToFailure} days`,
-    //       category: "PREVENTIVE",
-    //       priority: mockPrediction.riskLevel === "CRITICAL" ? "URGENT" : "HIGH",
-    //       status: "OPEN",
-    //       estimatedCost: mockPrediction.maintenanceCost,
-    //       aiPredictionId: mockPrediction.predictionId,
-    //     },
-    //   });
-    // }
+    if (prediction.urgency === 'HIGH' || prediction.urgency === 'CRITICAL') {
+      const workflowEngine = new WorkflowEngine();
+      await workflowEngine.executeWorkflow('MAINTENANCE_AUTO_ASSIGN', {
+        equipmentType: body.equipmentType,
+        unitId: body.unitId,
+        prediction: prediction,
+        userId: user.id,
+      });
+    }
 
     logger.info("Predictive maintenance analysis completed", {
       userId: user.id,
       equipmentType: body.equipmentType,
-      riskLevel: mockPrediction.riskLevel,
-      failureProbability: mockPrediction.failureProbability,
-      estimatedDaysToFailure: mockPrediction.estimatedDaysToFailure,
+      failureProbability: prediction.failureProbability,
+      expectedFailureDate: prediction.expectedFailureDate,
+      urgency: prediction.urgency,
+      estimatedCost: prediction.estimatedCost,
     });
 
-    return created(mockPrediction, "Predictive maintenance analysis completed successfully");
+    return created(prediction, "Predictive maintenance analysis completed successfully");
   } catch (error) {
     logger.error("Failed to perform predictive maintenance analysis", { error });
     return serverError(error);

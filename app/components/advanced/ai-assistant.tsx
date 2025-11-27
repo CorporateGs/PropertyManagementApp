@@ -31,9 +31,10 @@ interface Conversation {
   title: string;
   messages: Message[];
   createdAt: string;
+  updatedAt: string;
 }
 
-export default function AIAssistant() {
+const AIAssistant = () => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -373,7 +374,7 @@ export default function AIAssistant() {
                 placeholder="Ask me anything about property management..."
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
-                onKeyPress={(e) => {
+                onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
                     sendMessage();
@@ -397,4 +398,6 @@ export default function AIAssistant() {
       </Card>
     </div>
   );
-}
+};
+
+export default AIAssistant;

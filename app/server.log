@@ -1,0 +1,35 @@
+
+> property-management-crm@1.0.0 dev
+> next dev -p 3005
+
+  Γû▓ Next.js 14.2.28
+  - Local:        http://localhost:3005
+  - Environments: .env
+
+ Γ£ô Starting...
+Error: 
+[next-intl] Could not locate request configuration module.
+
+This path is supported by default: ./(src/)i18n/request.{js,jsx,ts,tsx}
+
+Alternatively, you can specify a custom location in your Next.js config:
+
+const withNextIntl = createNextIntlPlugin(
+
+Alternatively, you can specify a custom location in your Next.js config:
+
+const withNextIntl = createNextIntlPlugin(
+  './path/to/i18n/request.tsx'
+);
+
+    at throwError (C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\node_modules\next-intl\dist\cjs\development\plugin.cjs:12:9)
+    at resolveI18nPath (C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\node_modules\next-intl\dist\cjs\development\plugin.cjs:187:5)
+    at Object.webpack (C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\node_modules\next-intl\dist\cjs\development\plugin.cjs:323:79)
+    at getBaseWebpackConfig (C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\node_modules\next\dist\build\webpack-config.js:1838:32)
+    at async Promise.all (index 1)
+    at async Span.traceAsyncFn (C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\node_modules\next\dist\trace\trace.js:154:20)
+    at async Span.traceAsyncFn (C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\node_modules\next\dist\trace\trace.js:154:20)
+    at async HotReloaderWebpack.start (C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\node_modules\next\dist\server\dev\hot-reloader-webpack.js:621:37)
+    at async startWatcher (C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js:156:5)
+    at async setupDevBundler (C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js:775:20)
+[?25h

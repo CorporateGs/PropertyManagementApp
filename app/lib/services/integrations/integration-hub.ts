@@ -111,7 +111,7 @@ export interface Integration {
 /**
  * Stripe Payment Integration
  */
-export class StripeIntegration implements Integration {
+class StripeIntegration implements Integration {
   private stripe: Stripe | null = null;
 
   async connect(credentials: { apiKey: string; publishableKey?: string }): Promise<boolean> {
@@ -196,7 +196,7 @@ export class StripeIntegration implements Integration {
 /**
  * Twilio SMS Integration
  */
-export class TwilioIntegration implements Integration {
+class TwilioIntegration implements Integration {
   private client: Twilio | null = null;
 
   async connect(credentials: { accountSid: string; authToken: string; phoneNumber: string }): Promise<boolean> {
@@ -280,7 +280,7 @@ export class TwilioIntegration implements Integration {
 /**
  * QuickBooks Integration
  */
-export class QuickBooksIntegration implements Integration {
+class QuickBooksIntegration implements Integration {
   private accessToken: string | null = null;
   private realmId: string | null = null;
 
@@ -350,7 +350,7 @@ export class QuickBooksIntegration implements Integration {
 /**
  * DocuSign E-Signature Integration
  */
-export class DocuSignIntegration implements Integration {
+class DocuSignIntegration implements Integration {
   private accessToken: string | null = null;
   private accountId: string | null = null;
 
@@ -415,7 +415,7 @@ export class DocuSignIntegration implements Integration {
 /**
  * Zapier Webhook Integration
  */
-export class ZapierIntegration implements Integration {
+class ZapierIntegration implements Integration {
   private webhookUrls: Map<string, string> = new Map();
 
   async connect(credentials: { webhooks: Record<string, string> }): Promise<boolean> {
@@ -457,7 +457,7 @@ export class ZapierIntegration implements Integration {
 /**
  * Integration Hub Manager
  */
-export class IntegrationHub {
+class IntegrationHub {
   private integrations: Map<string, Integration> = new Map();
 
   /**

@@ -3,6 +3,10 @@ import { headers } from "next/headers";
 import { ok, badRequest, serverError } from "@/lib/api-response";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
+import Stripe from 'stripe';
+import { EmailService } from '@/lib/services/communication/communication-service';
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2023-10-16' });
 
 // POST /api/webhooks/stripe - Handle Stripe webhooks
 export async function POST(request: NextRequest) {
@@ -15,15 +19,18 @@ export async function POST(request: NextRequest) {
       return badRequest("Missing Stripe signature");
     }
 
-    // TODO: Verify webhook signature using Stripe SDK
-    // const isValidSignature = await verifyStripeSignature(body, signature);
-    // if (!isValidSignature) {
-    //   logger.warn("Invalid Stripe webhook signature");
-    //   return badRequest("Invalid signature");
-    // }
-
-    // Parse webhook body
-    const event = JSON.parse(body);
+    // Verify webhook signature using Stripe SDK
+    let event;
+    try {
+      event = stripe.webhooks.constructEvent(
+        body,
+        signature,
+        process.env.STRIPE_WEBHOOK_SECRET
+      );
+    } catch (err) {
+      logger.warn("Invalid Stripe webhook signature", { error: err });
+      return badRequest("Invalid signature");
+    }
 
     logger.info("Stripe webhook received", {
       eventType: event.type,
@@ -72,7 +79,7 @@ export async function POST(request: NextRequest) {
 }
 
 // Handle successful payment intent
-async function handlePaymentIntentSucceeded(paymentIntent: any) {
+async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent) {
   try {
     // Find payment record by Stripe payment intent ID
     const payment = await prisma.payment.findFirst({
@@ -102,12 +109,14 @@ async function handlePaymentIntentSucceeded(paymentIntent: any) {
       },
     });
 
-    // TODO: Send payment confirmation email to tenant
-    // await EmailService.sendPaymentConfirmation({
-    //   tenantId: payment.tenantId,
-    //   amount: payment.amount,
-    //   paymentDate: new Date(),
-    // });
+    // Send payment confirmation email to tenant
+    const emailService = new EmailService();
+    await emailService.sendEmail({
+      to: payment.tenant.email, // Assuming tenant has email field
+      subject: 'Payment Confirmation',
+      body: `Your payment of $${payment.amount} has been successfully processed.`,
+      html: `<p>Your payment of <strong>$${payment.amount}</strong> has been successfully processed.</p>`,
+    });
 
     logger.info("Payment marked as successful", {
       paymentId: payment.id,
@@ -120,7 +129,7 @@ async function handlePaymentIntentSucceeded(paymentIntent: any) {
 }
 
 // Handle failed payment intent
-async function handlePaymentIntentFailed(paymentIntent: any) {
+async function handlePaymentIntentFailed(paymentIntent: Stripe.PaymentIntent) {
   try {
     // Find payment record by Stripe payment intent ID
     const payment = await prisma.payment.findFirst({
@@ -149,12 +158,14 @@ async function handlePaymentIntentFailed(paymentIntent: any) {
       },
     });
 
-    // TODO: Send payment failure notification to tenant and staff
-    // await EmailService.sendPaymentFailureNotification({
-    //   tenantId: payment.tenantId,
-    //   amount: payment.amount,
-    //   failureReason: paymentIntent.last_payment_error?.message,
-    // });
+    // Send payment failure notification to tenant and staff
+    const emailService = new EmailService();
+    await emailService.sendEmail({
+      to: payment.tenant.email,
+      subject: 'Payment Failed',
+      body: `Your payment of $${payment.amount} has failed. Reason: ${paymentIntent.last_payment_error?.message}`,
+      html: `<p>Your payment of <strong>$${payment.amount}</strong> has failed.</p><p>Reason: ${paymentIntent.last_payment_error?.message}</p>`,
+    });
 
     logger.info("Payment marked as failed", {
       paymentId: payment.id,
@@ -167,19 +178,19 @@ async function handlePaymentIntentFailed(paymentIntent: any) {
 }
 
 // Handle subscription created
-async function handleSubscriptionCreated(subscription: any) {
+async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
   try {
-    // TODO: Create subscription record in database
-    // await prisma.subscription.create({
-    //   data: {
-    //     stripeSubscriptionId: subscription.id,
-    //     customerId: subscription.customer,
-    //     status: subscription.status,
-    //     currentPeriodStart: new Date(subscription.current_period_start * 1000),
-    //     currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-    //     cancelAtPeriodEnd: subscription.cancel_at_period_end,
-    //   },
-    // });
+    // Create subscription record in database
+    await prisma.subscription.create({
+      data: {
+        stripeSubscriptionId: subscription.id,
+        customerId: subscription.customer as string,
+        status: subscription.status,
+        currentPeriodStart: new Date(subscription.current_period_start * 1000),
+        currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+        cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      },
+    });
 
     logger.info("Subscription created", {
       subscriptionId: subscription.id,

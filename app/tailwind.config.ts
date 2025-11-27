@@ -60,6 +60,19 @@ const config: Config = {
           '4': 'hsl(var(--chart-4))',
           '5': 'hsl(var(--chart-5))',
         },
+        'navy': {
+          '800': '#1e293b',
+          '900': '#0f172a',
+          '950': '#020617',
+        },
+        'gold': {
+          '50': '#fefce8',
+          '100': '#fef9c3',
+          '200': '#fef08a',
+          '400': '#facc15',
+          '500': '#C69C45',
+          '600': '#ca8a04',
+        },
       },
       keyframes: {
         'accordion-down': {
@@ -78,10 +91,21 @@ const config: Config = {
             height: '0',
           },
         },
+        shimmer: {
+          '100%': {
+            transform: 'translateX(100%)',
+          },
+        },
+        'slow-zoom': {
+          '0%': { transform: 'scale(1)' },
+          '100%': { transform: 'scale(1.1)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
+        shimmer: 'shimmer 2s infinite',
+        'slow-zoom': 'slow-zoom 20s linear infinite alternate',
       },
     },
   },

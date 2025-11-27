@@ -1,0 +1,47 @@
+Seeding IoT Data...
+PrismaClientValidationError: 
+Invalid `prisma.buildingSystem.create()` invocation in
+C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\scripts\seed-iot.js:46:46
+
+  43 }
+  44 
+  45 // 2. Create HVAC System
+ΓåÆ 46 const hvac = await prisma.buildingSystem.create({
+       data: {
+         buildingId: "cmi6tpd620001h4csty4uiepk",
+         systemType: "HVAC",
+         name: "Main HVAC System",
+         manufacturer: "Carrier",
+         status: "ONLINE",
+         devices: {
+           create: [
+             {
+               deviceType: "THERMOSTAT",
+               name: "Lobby Thermostat",
+               location: "Lobby",
+               status: "ONLINE",
+               currentState: "{\"temp\":72,\"mode\":\"cool\",\"fan\":\"auto\"}",
+               isOnline: true
+             },
+             {
+               deviceType: "THERMOSTAT",
+               name: "Gym Thermostat",
+               location: "Gym",
+               status: "ONLINE",
+               currentState: "{\"temp\":68,\"mode\":\"cool\",\"fan\":\"on\"}",
+               isOnline: true
+             }
+           ]
+         }
+       }
+     })
+
+Argument `deviceId` is missing.
+    at An (C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\node_modules\@prisma\client\runtime\library.js:29:1363)
+    at zn.handleRequestError (C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\node_modules\@prisma\client\runtime\library.js:121:7102)
+    at zn.handleAndLogRequestError (C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\node_modules\@prisma\client\runtime\library.js:121:6784)
+    at zn.request (C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\node_modules\@prisma\client\runtime\library.js:121:6491)
+    at async l (C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\node_modules\@prisma\client\runtime\library.js:130:9778)
+    at async main (C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\scripts\seed-iot.js:46:18) {
+  clientVersion: '6.7.0'
+}

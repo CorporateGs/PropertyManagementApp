@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
     if (user.role === "OWNER") {
       // Owners can only see units in their buildings
       where.building = {
-        ownerId: user.id,
+        createdBy: user.id,
       };
     }
 
@@ -93,10 +93,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Get total count for pagination
-    const total = await prisma.units.count({ where });
+    const total = await prisma.unit.count({ where });
 
     // Get units with related data
-    const units = await prisma.units.findMany({
+    const units = await prisma.unit.findMany({
       where,
       include: {
         building: {
@@ -108,24 +108,13 @@ export async function GET(request: NextRequest) {
             state: true,
           },
         },
-        tenant: {
+        tenants: {
           select: {
             id: true,
             firstName: true,
             lastName: true,
             email: true,
           },
-        },
-        maintenanceRequests: {
-          where: {
-            status: {
-              in: ["OPEN", "IN_PROGRESS"],
-            },
-          },
-          orderBy: {
-            createdAt: "desc",
-          },
-          take: 3,
         },
       },
       orderBy: {
@@ -157,30 +146,13 @@ export async function POST(request: NextRequest) {
     await requireRole(["ADMIN", "STAFF", "OWNER"])(request);
 
     // Validate request body
-    const body = await validateBody(createUnitSchema, request) as {
-      buildingId: string;
-      unitNumber: string;
-      type: "STUDIO" | "1BED" | "2BED" | "3BED" | "4BED" | "LOFT" | "PENTHOUSE";
-      bedrooms: number;
-      bathrooms: number;
-      squareFootage?: number;
-      rentAmount: number;
-      securityDeposit: number;
-      status?: "VACANT" | "OCCUPIED" | "MAINTENANCE" | "RENOVATION";
-      floor?: number;
-      description?: string;
-      amenities?: string[];
-      isFurnished?: boolean;
-      hasParking?: boolean;
-      hasLaundry?: boolean;
-      hasPetsAllowed?: boolean;
-    };
+    const body = await validateBody(createUnitSchema, request) as any;
 
     // Verify building exists and user has access
     const building = await prisma.building.findFirst({
       where: {
         id: body.buildingId,
-        ...(user.role === "OWNER" && { ownerId: user.id }),
+        ...(user.role === "OWNER" && { createdBy: user.id }),
       },
     });
 
@@ -189,7 +161,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if unit number already exists in this building
-    const existingUnit = await prisma.units.findFirst({
+    const existingUnit = await prisma.unit.findFirst({
       where: {
         buildingId: body.buildingId,
         unitNumber: body.unitNumber,
@@ -201,7 +173,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create unit
-    const unit = await prisma.units.create({
+    const unit = await prisma.unit.create({
       data: {
         ...body,
         status: body.status || "VACANT",

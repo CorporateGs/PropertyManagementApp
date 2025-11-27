@@ -1,0 +1,34 @@
+{
+    "Dashboard": {
+        "title": "Panel de Control",
+        "welcome": "Bienvenido de nuevo",
+        "overview": "Resumen"
+    },
+    "Navigation": {
+        "dashboard": "Panel",
+        "communications": "Comunicaciones",
+        "services": "Mis Servicios",
+        "settings": "Configuración",
+        "analytics": "Analítica"
+    },
+    "Communications": {
+        "title": "Comunicaciones",
+        "compose": "Redactar",
+        "templates": "Plantillas",
+        "searchPlaceholder": "Buscar comunicaciones...",
+        "filters": {
+            "all": "Todos los mensajes",
+            "pending": "Pendientes de seguimiento",
+            "important": "Importante",
+            "sent": "Enviados",
+            "received": "Recibidos"
+        }
+    },
+    "Common": {
+        "save": "Guardar",
+        "cancel": "Cancelar",
+        "delete": "Eliminar",
+        "edit": "Editar",
+        "loading": "Cargando..."
+    }
+}

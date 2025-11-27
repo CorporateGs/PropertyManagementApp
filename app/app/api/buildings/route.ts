@@ -52,12 +52,12 @@ export async function GET(request: NextRequest) {
     // Role-based filtering
     if (user.role === "OWNER") {
       // Owners can only see their own buildings
-      where.ownerId = user.id;
+      where.createdBy = user.id;
     }
 
     // Apply filters
     if (query.ownerId) {
-      where.ownerId = query.ownerId;
+      where.createdBy = query.ownerId;
     }
 
     if (query.city) {
@@ -91,7 +91,7 @@ export async function GET(request: NextRequest) {
             unitNumber: true,
             status: true,
             rentAmount: true,
-            tenant: {
+            tenants: {
               select: {
                 id: true,
                 firstName: true,
@@ -114,13 +114,13 @@ export async function GET(request: NextRequest) {
     });
 
     // Calculate additional statistics for each building
-    const buildingsWithStats = buildings.map(building => {
-      const totalUnits = building.units.length;
-      const occupiedUnits = building.units.filter(unit => unit.status === "OCCUPIED").length;
-      const vacantUnits = building.units.filter(unit => unit.status === "VACANT").length;
+    const buildingsWithStats = buildings.map((building: any) => {
+      const totalUnits = building.units?.length || 0;
+      const occupiedUnits = building.units?.filter((unit: any) => unit.status === "OCCUPIED").length || 0;
+      const vacantUnits = building.units?.filter((unit: any) => unit.status === "VACANT").length || 0;
       const totalRent = building.units
-        .filter(unit => unit.status === "OCCUPIED")
-        .reduce((sum, unit) => sum + unit.rentAmount, 0);
+        ?.filter((unit: any) => unit.status === "OCCUPIED")
+        ?.reduce((sum: number, unit: any) => sum + unit.rentAmount, 0) || 0;
 
       return {
         ...building,
@@ -155,27 +155,15 @@ export async function POST(request: NextRequest) {
     await requireRole(["ADMIN", "STAFF", "OWNER"])(request);
 
     // Validate request body
-    const body = await validateBody(createBuildingSchema, request) as {
-      name: string;
-      address: string;
-      city: string;
-      state: string;
-      zipCode: string;
-      country?: string;
-      yearBuilt?: number;
-      totalUnits: number;
-      description?: string;
-      amenities?: string[];
-      ownerId?: string;
-    };
+    const body = await validateBody(createBuildingSchema, request) as any;
 
-    // If owner is creating building, set ownerId to their ID
-    if (user.role === "OWNER" && !body.ownerId) {
-      body.ownerId = user.id;
+    // If owner is creating building, set createdBy to their ID
+    if (user.role === "OWNER" && !body.createdBy) {
+      body.createdBy = user.id;
     }
 
-    // If ownerId is provided, verify the user has permission to create buildings for that owner
-    if (body.ownerId && user.role !== "ADMIN" && user.role !== "STAFF") {
+    // If createdBy is provided, verify that user has permission to create buildings for that owner
+    if (body.createdBy && user.role !== "ADMIN" && user.role !== "STAFF") {
       return badRequest("You don't have permission to create buildings for other owners");
     }
 
@@ -193,7 +181,7 @@ export async function POST(request: NextRequest) {
     logger.info("Building created", {
       userId: user.id,
       buildingId: building.id,
-      ownerId: building.ownerId,
+      createdBy: building.createdBy,
       totalUnits: building.totalUnits,
     });
 

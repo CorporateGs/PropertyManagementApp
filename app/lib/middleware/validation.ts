@@ -97,13 +97,8 @@ export function sanitizeInput(data: any): any {
     return data;
   }
   
-  return data
-    .replace(/</g, "<")
-    .replace(/>/g, ">")
-    .replace(/"/g, """)
-    .replace(/'/g, "&#x27;")
-    .replace(/\//g, "&#x2F;")
-    .trim();
+  // Remove all non-alphanumeric characters except spaces
+  return data.replace(/[^a-zA-Z0-9\s]/g, "").trim();
 }
 
 /**

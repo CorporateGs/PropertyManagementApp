@@ -1,0 +1,19 @@
+Seeding IoT Data...
+PrismaClientKnownRequestError: 
+Invalid `prisma.building.create()` invocation in
+C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\scripts\seed-iot.js:13:42
+
+  10 });
+  11 
+  12 if (!building) {
+ΓåÆ 13     building = await prisma.building.create(
+Foreign key constraint violated on the foreign key
+    at zn.handleRequestError (C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\node_modules\@prisma\client\runtime\library.js:121:7459)
+    at zn.handleAndLogRequestError (C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\node_modules\@prisma\client\runtime\library.js:121:6784)
+    at zn.request (C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\node_modules\@prisma\client\runtime\library.js:121:6491)
+    at async l (C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\node_modules\@prisma\client\runtime\library.js:130:9778)
+    at async main (C:\Users\p8tty\Downloads\property management cmr\property_management_system\app\scripts\seed-iot.js:13:20) {
+  code: 'P2003',
+  meta: { modelName: 'Building', constraint: null },
+  clientVersion: '6.7.0'
+}

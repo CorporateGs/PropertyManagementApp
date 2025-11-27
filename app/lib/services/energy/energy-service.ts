@@ -42,7 +42,7 @@ export enum UtilityProvider {
 /**
  * Energy Management Service
  */
-export class EnergyManagementService {
+class EnergyManagementService {
   /**
    * Record energy consumption
    */
@@ -463,7 +463,7 @@ export class EnergyManagementService {
 /**
  * Smart Device Integration Service
  */
-export class SmartDeviceService {
+class SmartDeviceService {
   /**
    * Register smart device
    */

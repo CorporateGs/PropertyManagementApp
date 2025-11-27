@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -37,7 +37,7 @@ import {
 
 interface UploadJob {
   id: string;
-  type: 'tenants' | 'units' | 'payments' | 'maintenance';
+  type: 'TENANTS' | 'UNITS' | 'PAYMENTS' | 'MAINTENANCE';
   fileName: string;
   totalRecords: number;
   processedRecords: number;
@@ -47,6 +47,18 @@ interface UploadJob {
   startedAt: Date;
   completedAt?: Date;
   errors?: string[];
+}
+
+interface PreviewData {
+  headers: string[];
+  rows: string[][];
+  totalRows: number;
+}
+
+interface ValidationError {
+  row: number;
+  column: string;
+  message: string;
 }
 
 const mockUploads: UploadJob[] = [
@@ -93,39 +105,154 @@ export function BulkUpload() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadJobs, setUploadJobs] = useState<UploadJob[]>(mockUploads);
   const [isUploading, setIsUploading] = useState(false);
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const validateFile = (file: File): ValidationError[] => {
+    const errors: ValidationError[] = [];
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    const allowedTypes = ['text/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
+
+    if (file.size > maxSize) {
+      errors.push({ row: 0, column: 'file', message: 'File size exceeds 10MB limit' });
+    }
+
+    if (!allowedTypes.includes(file.type)) {
+      errors.push({ row: 0, column: 'file', message: 'Invalid file type. Only CSV and Excel files are allowed' });
+    }
+
+    return errors;
+  };
+
+  const previewFile = async (file: File): Promise<PreviewData | null> => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('preview', 'true');
+
+      const response = await fetch('/api/uploads/preview', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) return null;
+
+      const data = await response.json();
+      return {
+        headers: data.headers || [],
+        rows: data.rows || [],
+        totalRows: data.totalRows || 0,
+      };
+    } catch (error) {
+      console.error('Preview failed:', error);
+      return null;
+    }
+  };
+
+  const pollJobStatus = async (jobId: string) => {
+    try {
+      const response = await fetch(`/api/uploads/job/${jobId}`);
+      if (!response.ok) return;
+
+      const jobData = await response.json();
+      setUploadJobs(prev => prev.map(job =>
+        job.id === jobId ? { ...job, ...jobData } : job
+      ));
+
+      if (jobData.status === 'completed' || jobData.status === 'failed') {
+        if (pollingInterval) {
+          clearInterval(pollingInterval);
+          setPollingInterval(null);
+        }
+        setCurrentJobId(null);
+        setIsUploading(false);
+      }
+    } catch (error) {
+      console.error('Polling failed:', error);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+      }
+    };
+  }, [pollingInterval]);
+
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       setSelectedFile(file);
+      setValidationErrors([]);
+      setPreviewData(null);
+
+      // Validate file
+      const errors = validateFile(file);
+      setValidationErrors(errors);
+
+      // Generate preview if no validation errors
+      if (errors.length === 0) {
+        const preview = await previewFile(file);
+        setPreviewData(preview);
+      }
     }
   };
 
   const handleUpload = async () => {
-    if (!selectedFile || !uploadType) return;
+    if (!selectedFile || !uploadType || validationErrors.length > 0) return;
 
     setIsUploading(true);
-    
-    // Simulate upload process
-    setTimeout(() => {
+
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('uploadType', uploadType);
+
+      const response = await fetch('/api/uploads', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Upload failed');
+      }
+
+      const result = await response.json();
+      const jobId = result.jobId || result.id;
+
+      // Start polling for job status
+      setCurrentJobId(jobId);
+      const interval = setInterval(() => pollJobStatus(jobId), 2000);
+      setPollingInterval(interval);
+
+      // Add job to list
       const newJob: UploadJob = {
-        id: Math.random().toString(36).substr(2, 9),
-        type: uploadType as any,
+        id: jobId,
+        type: uploadType as 'TENANTS' | 'UNITS' | 'PAYMENTS' | 'MAINTENANCE',
         fileName: selectedFile.name,
-        totalRecords: Math.floor(Math.random() * 500) + 50,
+        totalRecords: 0,
         processedRecords: 0,
         successfulRecords: 0,
         failedRecords: 0,
         status: 'processing',
         startedAt: new Date()
       };
-      
+
       setUploadJobs(prev => [newJob, ...prev]);
       setSelectedFile(null);
       setUploadType('');
-      setIsUploading(false);
+      setPreviewData(null);
+      setValidationErrors([]);
       setActiveTab('history');
-    }, 2000);
+    } catch (error) {
+      console.error('Upload failed:', error);
+      setIsUploading(false);
+      // Show error toast or alert
+    }
   };
 
   const getStatusIcon = (status: string) => {
@@ -247,8 +374,9 @@ export function BulkUpload() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="upload">New Upload</TabsTrigger>
+          <TabsTrigger value="preview">Preview</TabsTrigger>
           <TabsTrigger value="history">Upload History</TabsTrigger>
           <TabsTrigger value="templates">Templates</TabsTrigger>
           <TabsTrigger value="validation">AI Validation</TabsTrigger>
@@ -343,10 +471,24 @@ export function BulkUpload() {
                   />
                 </div>
 
+                {/* Validation Errors */}
+                {validationErrors.length > 0 && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <h4 className="font-medium text-red-800 mb-2">Validation Errors</h4>
+                    <ul className="text-sm text-red-700 space-y-1">
+                      {validationErrors.map((error, index) => (
+                        <li key={index}>
+                          {error.column}: {error.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
                 <div className="flex space-x-3">
                   <Button
                     onClick={handleUpload}
-                    disabled={!selectedFile || !uploadType || isUploading}
+                    disabled={!selectedFile || !uploadType || isUploading || validationErrors.length > 0}
                     className="flex-1"
                   >
                     {isUploading ? (
@@ -356,9 +498,13 @@ export function BulkUpload() {
                     )}
                     {isUploading ? 'Processing...' : 'Start Upload'}
                   </Button>
-                  <Button variant="outline">
+                  <Button
+                    variant="outline"
+                    onClick={() => setActiveTab('preview')}
+                    disabled={!previewData}
+                  >
                     <Bot className="h-4 w-4 mr-2" />
-                    AI Preview
+                    Preview Data
                   </Button>
                 </div>
               </CardContent>
@@ -420,6 +566,62 @@ export function BulkUpload() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="preview" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Data Preview</CardTitle>
+              <CardDescription>
+                Review the first 10 rows of your data before uploading
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {previewData ? (
+                <>
+                  <div className="text-sm text-gray-600">
+                    Total rows: {previewData.totalRows} | Showing first 10 rows
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full border border-gray-300">
+                      <thead>
+                        <tr className="bg-gray-50">
+                          {previewData.headers.map((header, index) => (
+                            <th key={index} className="border border-gray-300 px-4 py-2 text-left text-sm font-medium">
+                              {header}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewData.rows.map((row, rowIndex) => (
+                          <tr key={rowIndex} className="hover:bg-gray-50">
+                            {row.map((cell, cellIndex) => (
+                              <td key={cellIndex} className="border border-gray-300 px-4 py-2 text-sm">
+                                {cell}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="flex justify-between">
+                    <Button variant="outline" onClick={() => setActiveTab('upload')}>
+                      Back to Upload
+                    </Button>
+                    <Button onClick={handleUpload} disabled={isUploading}>
+                      {isUploading ? 'Processing...' : 'Confirm Upload'}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  No preview data available. Please select a file first.
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="history" className="space-y-6">

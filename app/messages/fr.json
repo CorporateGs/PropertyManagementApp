@@ -1,0 +1,34 @@
+{
+    "Dashboard": {
+        "title": "Tableau de Bord",
+        "welcome": "Bon retour",
+        "overview": "Aperçu"
+    },
+    "Navigation": {
+        "dashboard": "Tableau de Bord",
+        "communications": "Communications",
+        "services": "Mes Services",
+        "settings": "Paramètres",
+        "analytics": "Analytique"
+    },
+    "Communications": {
+        "title": "Communications",
+        "compose": "Composer",
+        "templates": "Modèles",
+        "searchPlaceholder": "Rechercher des communications...",
+        "filters": {
+            "all": "Tous les messages",
+            "pending": "Suivis en attente",
+            "important": "Important",
+            "sent": "Envoyés",
+            "received": "Reçus"
+        }
+    },
+    "Common": {
+        "save": "Enregistrer",
+        "cancel": "Annuler",
+        "delete": "Supprimer",
+        "edit": "Modifier",
+        "loading": "Chargement..."
+    }
+}

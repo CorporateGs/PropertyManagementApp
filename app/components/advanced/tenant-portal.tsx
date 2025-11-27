@@ -1,7 +1,9 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
+import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,71 +30,17 @@ import {
   Star,
   MapPin
 } from 'lucide-react';
-
-const mockTenant = {
-  firstName: 'Sarah',
-  lastName: 'Johnson',
-  email: 'sarah.johnson@email.com',
-  phone: '(555) 123-4567',
-  unit: '205',
-  leaseStart: '2023-08-01',
-  leaseEnd: '2024-07-31',
-  rentAmount: 2750,
-  balanceOwed: 0,
-  lastPayment: '2024-01-01'
-};
-
-const mockPayments = [
-  { id: '1', date: '2024-01-01', amount: 2750, status: 'Paid', method: 'ACH Transfer' },
-  { id: '2', date: '2023-12-01', amount: 2750, status: 'Paid', method: 'ACH Transfer' },
-  { id: '3', date: '2023-11-01', amount: 2750, status: 'Paid', method: 'Check' },
-];
-
-const mockMaintenanceRequests = [
-  {
-    id: '1',
-    title: 'Kitchen Faucet Dripping',
-    description: 'The kitchen faucet has been dripping for the past week',
-    status: 'In Progress',
-    priority: 'Medium',
-    submitted: '2024-01-15',
-    category: 'Plumbing',
-    photos: []
-  },
-  {
-    id: '2',
-    title: 'AC Unit Making Noise',
-    description: 'Unusual noise from AC unit in living room',
-    status: 'Completed',
-    priority: 'High',
-    submitted: '2023-12-20',
-    completed: '2023-12-22',
-    category: 'HVAC'
-  }
-];
-
-const mockCommunications = [
-  {
-    id: '1',
-    type: 'Email',
-    subject: 'Lease Renewal Discussion',
-    content: 'Hi Sarah, we\'d like to discuss your lease renewal options...',
-    timestamp: '2024-01-10 09:30 AM',
-    from: 'Property Manager',
-    status: 'Read'
-  },
-  {
-    id: '2',
-    type: 'SMS',
-    subject: 'Maintenance Update',
-    content: 'Your maintenance request #1 has been assigned to our technician.',
-    timestamp: '2024-01-15 02:15 PM',
-    from: 'System',
-    status: 'Read'
-  }
-];
+import { useMutation, useRealtimeUpdates } from '@/lib/hooks/use-api';
+import { Tenant, MaintenanceRequest, Communication } from '@/lib/types';
 
 export function TenantPortal() {
+  const { data: session } = useSession();
+  const [currentTenant, setCurrentTenant] = useState<Tenant | null>(null);
+  const [maintenanceRequests, setMaintenanceRequests] = useState<MaintenanceRequest[]>([]);
+  const [communications, setCommunications] = useState<Communication[]>([]);
+  const [managerId, setManagerId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
   const [newMaintenanceRequest, setNewMaintenanceRequest] = useState({
     title: '',
     description: '',
@@ -103,23 +51,173 @@ export function TenantPortal() {
 
   const [newMessage, setNewMessage] = useState('');
 
-  const handleSubmitMaintenance = () => {
-    // Handle maintenance request submission
-    console.log('Submitting maintenance request:', newMaintenanceRequest);
-    setNewMaintenanceRequest({
-      title: '',
-      description: '',
-      priority: 'Medium',
-      category: 'General',
-      allowEntry: false
-    });
+  const { mutate: submitMaintenanceMutation } = useMutation();
+  const { mutate: sendMessageMutation } = useMutation();
+
+  // Fetch current tenant data
+  useEffect(() => {
+    const fetchTenantData = async () => {
+      try {
+        const response = await fetch('/api/tenants/me');
+        const result = await response.json();
+        if (result.success) {
+          setCurrentTenant(result.data);
+          // Fetch building manager
+          if (result.data.unit?.buildingId) {
+            const buildingResponse = await fetch(`/api/buildings/${result.data.unit.buildingId}`);
+            const buildingResult = await buildingResponse.json();
+            if (buildingResult.success) {
+              setManagerId(buildingResult.data.ownerId);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch tenant data:', error);
+        toast.error('Failed to load tenant data');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (session?.user) {
+      fetchTenantData();
+    }
+  }, [session]);
+
+  // Fetch maintenance requests
+  useEffect(() => {
+    const fetchMaintenance = async () => {
+      if (!currentTenant?.id) return;
+      try {
+        const response = await fetch(`/api/maintenance?tenantId=${currentTenant.id}`);
+        const result = await response.json();
+        if (result.success) {
+          setMaintenanceRequests(result.data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch maintenance requests:', error);
+      }
+    };
+
+    fetchMaintenance();
+  }, [currentTenant]);
+
+  // Fetch communications
+  useEffect(() => {
+    const fetchCommunications = async () => {
+      if (!currentTenant?.id) return;
+      try {
+        const response = await fetch(`/api/communications?recipientId=${currentTenant.id}&recipientType=TENANT`);
+        const result = await response.json();
+        if (result.success) {
+          setCommunications(result.data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch communications:', error);
+      }
+    };
+
+    fetchCommunications();
+  }, [currentTenant]);
+
+  // Real-time updates
+  useRealtimeUpdates(
+    `ws://localhost:3000/api/ws?userId=${session?.user?.id}`,
+    'maintenance_update',
+    (data: MaintenanceRequest) => {
+      setMaintenanceRequests(prev => prev.map(req => req.id === data.id ? data : req));
+      toast.info('Maintenance request updated');
+    }
+  );
+
+  useRealtimeUpdates(
+    `ws://localhost:3000/api/ws?userId=${session?.user?.id}`,
+    'new_message',
+    (data: Communication) => {
+      setCommunications(prev => [data, ...prev]);
+      toast.info('New message received');
+    }
+  );
+
+  const handleSubmitMaintenance = async () => {
+    if (!currentTenant?.unitId || !currentTenant?.id) {
+      toast.error('Tenant data not available');
+      return;
+    }
+
+    try {
+      await submitMaintenanceMutation('/api/maintenance', {
+        unitId: currentTenant.unitId,
+        tenantId: currentTenant.id,
+        title: newMaintenanceRequest.title,
+        description: newMaintenanceRequest.description,
+        category: newMaintenanceRequest.category.toUpperCase(),
+        priority: newMaintenanceRequest.priority.toUpperCase(),
+      }, {
+        onSuccess: (data) => {
+          setMaintenanceRequests(prev => [data, ...prev]);
+          setNewMaintenanceRequest({
+            title: '',
+            description: '',
+            priority: 'Medium',
+            category: 'General',
+            allowEntry: false
+          });
+        }
+      });
+    } catch (error) {
+      // Error handled by mutation hook
+    }
   };
 
-  const handleSendMessage = () => {
-    // Handle message submission
-    console.log('Sending message:', newMessage);
-    setNewMessage('');
+  const handleSendMessage = async () => {
+    if (!managerId) {
+      toast.error('Manager information not available');
+      return;
+    }
+
+    try {
+      await sendMessageMutation('/api/communications', {
+        recipientId: managerId,
+        recipientType: 'STAFF',
+        type: 'IN_APP',
+        subject: 'Message from Tenant',
+        message: newMessage,
+      }, {
+        onSuccess: (data) => {
+          setCommunications(prev => [data, ...prev]);
+          setNewMessage('');
+        }
+      });
+    } catch (error) {
+      // Error handled by mutation hook
+    }
   };
+
+  if (loading || !currentTenant) {
+    return (
+      <div className="space-y-6">
+        <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg p-6 text-white">
+          <div className="animate-pulse">
+            <div className="h-8 bg-white/20 rounded w-64 mb-2"></div>
+            <div className="h-4 bg-white/20 rounded w-48"></div>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i}>
+              <CardContent className="p-4">
+                <div className="animate-pulse">
+                  <div className="h-4 bg-gray-200 rounded w-24 mb-2"></div>
+                  <div className="h-8 bg-gray-200 rounded w-16"></div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -128,21 +226,21 @@ export function TenantPortal() {
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <Avatar className="h-16 w-16">
-              <AvatarFallback>SJ</AvatarFallback>
+              <AvatarFallback>{currentTenant.firstName[0]}{currentTenant.lastName[0]}</AvatarFallback>
             </Avatar>
             <div>
-              <h1 className="text-2xl font-bold">Welcome back, {mockTenant.firstName}!</h1>
-              <p className="opacity-90">Unit {mockTenant.unit} • Sunset Apartments</p>
+              <h1 className="text-2xl font-bold">Welcome back, {currentTenant.firstName}!</h1>
+              <p className="opacity-90">Unit {currentTenant.unit?.unitNumber} • {currentTenant.unit?.building?.name}</p>
               <p className="text-sm opacity-75">
                 <MapPin className="inline h-4 w-4 mr-1" />
-                123 Main Street, San Francisco, CA
+                {currentTenant.unit?.building?.address}, {currentTenant.unit?.building?.city}, {currentTenant.unit?.building?.state}
               </p>
             </div>
           </div>
           <div className="text-right">
             <p className="text-sm opacity-75">Lease Expires</p>
-            <p className="text-xl font-bold">{new Date(mockTenant.leaseEnd).toLocaleDateString()}</p>
-            <p className="text-sm opacity-75">6 months remaining</p>
+            <p className="text-xl font-bold">{new Date(currentTenant.leaseEndDate).toLocaleDateString()}</p>
+            <p className="text-sm opacity-75">{Math.ceil((new Date(currentTenant.leaseEndDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24 * 30))} months remaining</p>
           </div>
         </div>
       </div>
@@ -156,7 +254,7 @@ export function TenantPortal() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Balance Owed</p>
-              <p className="text-xl font-bold">${mockTenant.balanceOwed.toLocaleString()}</p>
+              <p className="text-xl font-bold">$0.00</p>
             </div>
           </CardContent>
         </Card>
@@ -168,7 +266,7 @@ export function TenantPortal() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Next Payment</p>
-              <p className="text-xl font-bold">Feb 1</p>
+              <p className="text-xl font-bold">{new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
             </div>
           </CardContent>
         </Card>
@@ -180,7 +278,7 @@ export function TenantPortal() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Open Requests</p>
-              <p className="text-xl font-bold">1</p>
+              <p className="text-xl font-bold">{maintenanceRequests.filter(req => req.status !== 'COMPLETED').length}</p>
             </div>
           </CardContent>
         </Card>
@@ -192,7 +290,7 @@ export function TenantPortal() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Unread Messages</p>
-              <p className="text-xl font-bold">0</p>
+              <p className="text-xl font-bold">{communications.filter(comm => comm.status !== 'READ').length}</p>
             </div>
           </CardContent>
         </Card>
@@ -238,18 +336,18 @@ export function TenantPortal() {
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Monthly Rent</span>
                     <span className="text-2xl font-bold text-green-600">
-                      ${mockTenant.rentAmount.toLocaleString()}
+                      ${currentTenant.rentAmount.toLocaleString()}
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 mt-1">Due: 1st of each month</p>
                 </div>
-                
+
                 <div className="space-y-3">
                   <div>
                     <label className="text-sm font-medium">Payment Amount</label>
-                    <Input type="number" placeholder="2750.00" />
+                    <Input type="number" placeholder={currentTenant.rentAmount.toString()} />
                   </div>
-                  
+
                   <div>
                     <label className="text-sm font-medium">Payment Method</label>
                     <select className="w-full p-2 border rounded-md">
@@ -259,16 +357,16 @@ export function TenantPortal() {
                     </select>
                   </div>
                 </div>
-                
-                <Button 
-                  className="w-full" 
+
+                <Button
+                  className="w-full"
                   size="lg"
-                  onClick={() => alert('Payment processing would be integrated with payment gateway')}
+                  onClick={() => toast.info('Payment processing integration pending')}
                 >
                   <CreditCard className="h-4 w-4 mr-2" />
                   Pay Now
                 </Button>
-                
+
                 <p className="text-xs text-gray-500 text-center">
                   Secure payment processing • PCI Compliant • 256-bit encryption
                 </p>
@@ -285,29 +383,18 @@ export function TenantPortal() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {mockPayments.map((payment) => (
-                    <div key={payment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center space-x-3">
-                        <div className="p-2 bg-green-100 rounded-full">
-                          <CheckCircle className="h-4 w-4 text-green-600" />
-                        </div>
-                        <div>
-                          <p className="font-medium">${payment.amount.toLocaleString()}</p>
-                          <p className="text-sm text-gray-600">{payment.method}</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm">{new Date(payment.date).toLocaleDateString()}</p>
-                        <Badge variant="secondary">{payment.status}</Badge>
-                      </div>
-                    </div>
-                  ))}
+                  {/* Placeholder for payment history - would need to fetch from API */}
+                  <div className="text-center text-gray-500 py-8">
+                    <CreditCard className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                    <p>Payment history will be displayed here</p>
+                    <p className="text-sm">Integration with payment system pending</p>
+                  </div>
                 </div>
-                
-                <Button 
-                  variant="outline" 
+
+                <Button
+                  variant="outline"
                   className="w-full mt-4"
-                  onClick={() => alert('Payment history download would generate PDF report')}
+                  onClick={() => toast.info('Payment history download pending')}
                 >
                   <Download className="h-4 w-4 mr-2" />
                   Download Payment History
@@ -432,43 +519,51 @@ export function TenantPortal() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {mockMaintenanceRequests.map((request) => (
-                    <div key={request.id} className="border rounded-lg p-4">
-                      <div className="flex items-start justify-between mb-2">
-                        <div>
-                          <h4 className="font-medium">{request.title}</h4>
-                          <p className="text-sm text-gray-600">{request.description}</p>
-                        </div>
-                        <Badge variant={request.status === 'Completed' ? 'secondary' : 'default'}>
-                          {request.status}
-                        </Badge>
-                      </div>
-                      
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="flex items-center space-x-4">
-                          <span className="text-gray-500">
-                            Submitted: {new Date(request.submitted).toLocaleDateString()}
-                          </span>
-                          {request.completed && (
-                            <span className="text-green-600">
-                              Completed: {new Date(request.completed).toLocaleDateString()}
-                            </span>
-                          )}
-                        </div>
-                        <Badge variant="outline">{request.priority}</Badge>
-                      </div>
-                      
-                      {request.status === 'In Progress' && (
-                        <div className="mt-3">
-                          <div className="flex items-center justify-between text-sm mb-1">
-                            <span>Progress</span>
-                            <span>60%</span>
-                          </div>
-                          <Progress value={60} className="h-2" />
-                        </div>
-                      )}
+                  {maintenanceRequests.length === 0 ? (
+                    <div className="text-center text-gray-500 py-8">
+                      <Wrench className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                      <p>No maintenance requests yet</p>
+                      <p className="text-sm">Submit your first request above</p>
                     </div>
-                  ))}
+                  ) : (
+                    maintenanceRequests.map((request) => (
+                      <div key={request.id} className="border rounded-lg p-4">
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <h4 className="font-medium">{request.title}</h4>
+                            <p className="text-sm text-gray-600">{request.description}</p>
+                          </div>
+                          <Badge variant={request.status === 'COMPLETED' ? 'secondary' : 'default'}>
+                            {request.status.replace('_', ' ')}
+                          </Badge>
+                        </div>
+
+                        <div className="flex items-center justify-between text-sm">
+                          <div className="flex items-center space-x-4">
+                            <span className="text-gray-500">
+                              Submitted: {new Date(request.requestDate).toLocaleDateString()}
+                            </span>
+                            {request.completedDate && (
+                              <span className="text-green-600">
+                                Completed: {new Date(request.completedDate).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                          <Badge variant="outline">{request.priority}</Badge>
+                        </div>
+
+                        {request.status === 'IN_PROGRESS' && (
+                          <div className="mt-3">
+                            <div className="flex items-center justify-between text-sm mb-1">
+                              <span>Progress</span>
+                              <span>60%</span>
+                            </div>
+                            <Progress value={60} className="h-2" />
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -519,20 +614,28 @@ export function TenantPortal() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {mockCommunications.map((comm) => (
-                    <div key={comm.id} className="border rounded-lg p-4">
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex items-center space-x-2">
-                          <Badge variant="outline">{comm.type}</Badge>
-                          <span className="text-sm text-gray-500">from {comm.from}</span>
-                        </div>
-                        <span className="text-xs text-gray-500">{comm.timestamp}</span>
-                      </div>
-                      
-                      <h4 className="font-medium mb-2">{comm.subject}</h4>
-                      <p className="text-sm text-gray-600">{comm.content}</p>
+                  {communications.length === 0 ? (
+                    <div className="text-center text-gray-500 py-8">
+                      <MessageCircle className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                      <p>No messages yet</p>
+                      <p className="text-sm">Send your first message above</p>
                     </div>
-                  ))}
+                  ) : (
+                    communications.map((comm) => (
+                      <div key={comm.id} className="border rounded-lg p-4">
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-center space-x-2">
+                            <Badge variant="outline">{comm.type}</Badge>
+                            <span className="text-sm text-gray-500">from {comm.createdBy?.firstName} {comm.createdBy?.lastName}</span>
+                          </div>
+                          <span className="text-xs text-gray-500">{new Date(comm.createdAt).toLocaleString()}</span>
+                        </div>
+
+                        <h4 className="font-medium mb-2">{comm.subject}</h4>
+                        <p className="text-sm text-gray-600">{comm.content}</p>
+                      </div>
+                    ))
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -599,25 +702,25 @@ export function TenantPortal() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-sm font-medium">First Name</label>
-                    <Input defaultValue={mockTenant.firstName} />
+                    <Input defaultValue={currentTenant.firstName} />
                   </div>
                   <div>
                     <label className="text-sm font-medium">Last Name</label>
-                    <Input defaultValue={mockTenant.lastName} />
+                    <Input defaultValue={currentTenant.lastName} />
                   </div>
                 </div>
-                
+
                 <div>
                   <label className="text-sm font-medium">Email</label>
-                  <Input type="email" defaultValue={mockTenant.email} />
+                  <Input type="email" defaultValue={currentTenant.email} />
                 </div>
-                
+
                 <div>
                   <label className="text-sm font-medium">Phone</label>
-                  <Input type="tel" defaultValue={mockTenant.phone} />
+                  <Input type="tel" defaultValue={currentTenant.phone || ''} />
                 </div>
-                
-                <Button className="w-full">
+
+                <Button className="w-full" onClick={() => toast.info('Profile update integration pending')}>
                   Update Profile
                 </Button>
               </CardContent>

@@ -44,7 +44,7 @@ export enum AnalyticsPeriod {
 /**
  * Real-Time Dashboard Service
  */
-export class DashboardService {
+class DashboardService {
   /**
    * Get real-time dashboard data
    */
@@ -332,7 +332,7 @@ export class DashboardService {
 /**
  * Predictive Analytics Service
  */
-export class PredictiveAnalyticsService {
+class PredictiveAnalyticsService {
   /**
    * Predict occupancy rates
    */
@@ -470,7 +470,7 @@ export class PredictiveAnalyticsService {
 /**
  * Custom KPI Tracking Service
  */
-export class KPITrackingService {
+class KPITrackingService {
   /**
    * Create custom KPI
    */

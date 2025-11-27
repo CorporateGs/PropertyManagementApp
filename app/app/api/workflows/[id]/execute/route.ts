@@ -6,6 +6,7 @@ import { ok, created, badRequest, notFound, serverError } from "@/lib/api-respon
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { z } from "zod";
+import { WorkflowEngine } from '@/lib/services/automation/workflow-engine';
 
 // POST /api/workflows/[id]/execute - Manually trigger workflow execution
 export async function POST(
@@ -56,74 +57,151 @@ export async function POST(
       return badRequest("Workflow is not active");
     }
 
-    // TODO: Import and call WorkflowEngine.executeWorkflow
-    // const executionResult = await WorkflowEngine.executeWorkflow({
-    //   workflowId: workflow.id,
-    //   triggeredBy: user.id,
-    //   context: body.context,
-    //   triggerData: body.triggerData,
-    // });
-
-    // For now, simulate workflow execution
-    const mockExecutionResult = {
-      executionId: `exec_${Date.now()}`,
+    // Initialize workflow engine and execute
+    const workflowEngine = new WorkflowEngine();
+    const executionResult = await workflowEngine.executeWorkflow({
       workflowId: workflow.id,
-      status: "COMPLETED",
-      startedAt: new Date().toISOString(),
-      completedAt: new Date().toISOString(),
-      duration: Math.floor(Math.random() * 5000) + 1000, // 1-6 seconds
-      steps: [
-        {
-          step: "CONDITION_EVALUATION",
-          status: "COMPLETED",
-          duration: 150,
-          result: true,
-        },
-        {
-          step: "SEND_EMAIL",
-          status: "COMPLETED",
-          duration: 1200,
-          result: { messageId: "msg_123", status: "SENT" },
-        },
-        {
-          step: "UPDATE_RECORD",
-          status: "COMPLETED",
-          duration: 300,
-          result: { recordId: "tenant_456", updated: true },
-        },
-      ],
-      triggeredBy: user.id,
-      triggerType: "MANUAL",
       context: body.context,
-    };
+      triggeredBy: user.id,
+    });
 
-    // TODO: Persist execution result to database
-    // await prisma.workflowExecution.create({
-    //   data: {
-    //     id: mockExecutionResult.executionId,
-    //     workflowId: workflow.id,
-    //     status: mockExecutionResult.status,
-    //     startedAt: new Date(mockExecutionResult.startedAt),
-    //     completedAt: new Date(mockExecutionResult.completedAt),
-    //     duration: mockExecutionResult.duration,
-    //     triggeredBy: user.id,
-    //     triggerType: "MANUAL",
-    //     context: body.context,
-    //     result: mockExecutionResult,
-    //   },
-    // });
+    // Persist execution result to database
+    await prisma.workflowExecution.create({
+      data: {
+        id: executionResult.executionId,
+        workflowId: workflow.id,
+        status: executionResult.status,
+        startedAt: new Date(executionResult.startedAt),
+        completedAt: new Date(executionResult.completedAt),
+        duration: executionResult.duration,
+        triggeredBy: user.id,
+        triggerType: "MANUAL",
+        context: body.context,
+        result: executionResult,
+      },
+    });
 
+    // Execution monitoring: log performance and steps
     logger.info("Workflow execution completed", {
       userId: user.id,
       workflowId: workflow.id,
-      executionId: mockExecutionResult.executionId,
-      status: mockExecutionResult.status,
-      duration: mockExecutionResult.duration,
+      executionId: executionResult.executionId,
+      status: executionResult.status,
+      duration: executionResult.duration,
+      stepsCount: executionResult.steps?.length || 0,
     });
 
-    return created(mockExecutionResult, "Workflow executed successfully");
+    // Send notification on completion or failure
+    if (executionResult.status === 'COMPLETED') {
+      // Send success notification
+      await prisma.notification.create({
+        data: {
+          userId: user.id,
+          title: 'Workflow Execution Completed',
+          message: `Workflow "${workflow.name}" executed successfully.`,
+          type: 'SUCCESS',
+          relatedEntity: 'workflow',
+          relatedId: workflow.id,
+          isRead: false,
+          createdBy: 'system',
+        },
+      });
+    } else if (executionResult.status === 'FAILED') {
+      // Send failure notification
+      await prisma.notification.create({
+        data: {
+          userId: user.id,
+          title: 'Workflow Execution Failed',
+          message: `Workflow "${workflow.name}" execution failed. Check logs for details.`,
+          type: 'ERROR',
+          relatedEntity: 'workflow',
+          relatedId: workflow.id,
+          isRead: false,
+          createdBy: 'system',
+        },
+      });
+    }
+
+    return created(executionResult, "Workflow executed successfully");
   } catch (error) {
     logger.error("Failed to execute workflow", { error });
+
+    // Retry logic with exponential backoff
+    let retryCount = 0;
+    const maxRetries = 3;
+    while (retryCount < maxRetries) {
+      try {
+        // Re-attempt execution
+        const workflowEngine = new WorkflowEngine();
+        const retryResult = await workflowEngine.executeWorkflow({
+          workflowId: workflow.id,
+          context: body.context,
+          triggeredBy: user.id,
+        });
+
+        // If successful, persist and return
+        await prisma.workflowExecution.create({
+          data: {
+            id: retryResult.executionId,
+            workflowId: workflow.id,
+            status: retryResult.status,
+            startedAt: new Date(retryResult.startedAt),
+            completedAt: new Date(retryResult.completedAt),
+            duration: retryResult.duration,
+            triggeredBy: user.id,
+            triggerType: "MANUAL",
+            context: body.context,
+            result: retryResult,
+            retryCount: retryCount + 1,
+            retryReason: (error as Error).message,
+          },
+        });
+
+        logger.info("Workflow execution succeeded on retry", {
+          userId: user.id,
+          workflowId: workflow.id,
+          executionId: retryResult.executionId,
+          retryCount: retryCount + 1,
+        });
+
+        return created(retryResult, "Workflow executed successfully after retry");
+      } catch (retryError) {
+        retryCount++;
+        if (retryCount >= maxRetries) {
+          // Final failure, persist failure record
+          await prisma.workflowExecution.create({
+            data: {
+              id: `exec_${Date.now()}_failed`,
+              workflowId: workflow.id,
+              status: 'FAILED',
+              startedAt: new Date(),
+              completedAt: new Date(),
+              duration: 0,
+              triggeredBy: user.id,
+              triggerType: "MANUAL",
+              context: body.context,
+              result: { error: (error as Error).message },
+              retryCount,
+              retryReason: (error as Error).message,
+            },
+          });
+
+          logger.error("Workflow execution failed after retries", {
+            userId: user.id,
+            workflowId: workflow.id,
+            retryCount,
+            error: (error as Error).message,
+          });
+
+          return serverError(error);
+        }
+
+        // Exponential backoff delay
+        const delay = Math.pow(2, retryCount) * 1000;
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
     return serverError(error);
   }
 }

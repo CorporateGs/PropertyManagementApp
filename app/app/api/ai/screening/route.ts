@@ -4,6 +4,7 @@ import { validateBody } from "@/lib/middleware/validation";
 import { tenantScreeningInputSchema } from "@/lib/validation/schemas";
 import { ok, badRequest, serverError } from "@/lib/api-response";
 import { logger } from "@/lib/logger";
+import { TenantScreeningAI } from '@/lib/services/ai/ai-service';
 
 // POST /api/ai/screening - Analyze tenant application
 export async function POST(request: NextRequest) {
@@ -27,47 +28,49 @@ export async function POST(request: NextRequest) {
       requestedRent: number;
     };
 
-    // TODO: Import and call TenantScreeningAI.analyzeApplicant from AI service
-    // const aiResult = await TenantScreeningAI.analyzeApplicant(body);
+    const screeningAI = new TenantScreeningAI();
+    const screeningResult = await screeningAI.analyzeApplicant({
+      creditScore: body.creditScore,
+      monthlyIncome: body.monthlyIncome,
+      rentAmount: body.requestedRent,
+      employmentStatus: body.employmentStatus,
+      employmentDuration: body.employmentYears * 12,
+      evictionHistory: body.evictionHistory ? 'Yes' : 'No',
+      criminalHistory: body.criminalHistory ? 'Yes' : 'No',
+      rentalHistory: body.rentalHistory,
+    });
 
-    // For now, return a mock response that matches the expected AI service format
-    const mockResult = {
-      riskScore: Math.floor(Math.random() * 100), // 0-100 risk score
-      recommendation: Math.random() > 0.5 ? "APPROVE" : "DENY",
-      confidence: Math.floor(Math.random() * 100),
-      reasoning: [
-        "Credit score analysis: Good standing",
-        "Income verification: Sufficient income",
-        "Employment stability: Stable employment history",
-        "Rental history: Positive references",
-        "Criminal background: Clean record",
-      ],
-      redFlags: [],
-      screeningId: `screen_${Date.now()}`,
-      processedAt: new Date().toISOString(),
-    };
+    // Perform fraud detection
+    const fraudResult = await screeningAI.detectFraud({
+      documentsProvided: body.references || [],
+    });
 
-    // TODO: Persist results to database
-    // await prisma.tenantScreening.create({
-    //   data: {
-    //     tenantId: body.applicantId,
-    //     riskScore: aiResult.riskScore,
-    //     recommendation: aiResult.recommendation,
-    //     confidence: aiResult.confidence,
-    //     reasoning: aiResult.reasoning,
-    //     redFlags: aiResult.redFlags,
-    //     screeningData: body,
-    //   },
-    // });
+    await prisma.tenantScreening.create({
+      data: {
+        tenantId: body.applicantId,
+        riskScore: screeningResult.riskScore,
+        recommendation: screeningResult.recommendation,
+        confidence: screeningResult.confidence,
+        reasoning: screeningResult.reasoning,
+        redFlags: screeningResult.redFlags,
+        strengths: screeningResult.strengths,
+        screeningData: body,
+      },
+    });
 
     logger.info("Tenant screening completed", {
       userId: user.id,
       applicantId: body.applicantId,
-      riskScore: mockResult.riskScore,
-      recommendation: mockResult.recommendation,
+      riskScore: screeningResult.riskScore,
+      recommendation: screeningResult.recommendation,
     });
 
-    return ok(mockResult, "Tenant screening completed successfully");
+    return ok({
+      ...screeningResult,
+      fraudScore: fraudResult.fraudScore,
+      fraudReasons: fraudResult.reasons,
+      isSuspicious: fraudResult.isSuspicious,
+    }, "Tenant screening completed successfully");
   } catch (error) {
     logger.error("Failed to perform tenant screening", { error });
     return serverError(error);

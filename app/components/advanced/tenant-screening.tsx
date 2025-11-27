@@ -25,6 +25,8 @@ import {
 import { toast } from "sonner";
 
 // Types
+type TabType = "overview" | "details" | "history";
+
 interface ScreeningResult {
   riskScore: number;
   recommendation: "APPROVE" | "DENY" | "REVIEW";
@@ -32,6 +34,13 @@ interface ScreeningResult {
   reasoning: string[];
   redFlags: string[];
   screeningId: string;
+  processedAt: string;
+}
+
+interface ScreeningHistory {
+  id: string;
+  riskScore: number;
+  recommendation: string;
   processedAt: string;
 }
 
@@ -57,9 +66,10 @@ interface ApplicantData {
 export default function TenantScreening({ applicantId }: { applicantId: string }) {
   const [applicant, setApplicant] = useState<ApplicantData | null>(null);
   const [screeningResult, setScreeningResult] = useState<ScreeningResult | null>(null);
+  const [screeningHistory, setScreeningHistory] = useState<ScreeningHistory[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "details" | "history">("overview");
+  const [activeTab, setActiveTab] = useState<TabType>("overview");
 
   // Load applicant data
   useEffect(() => {
@@ -72,33 +82,20 @@ export default function TenantScreening({ applicantId }: { applicantId: string }
     try {
       setIsLoading(true);
 
-      // TODO: Fetch applicant data from tenants API
-      // const response = await fetch(`/api/tenants/${applicantId}`);
+      const response = await fetch(`/api/tenants/${applicantId}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch applicant data: ${response.statusText}`);
+      }
 
-      // For now, use mock data
-      const mockApplicant: ApplicantData = {
-        id: applicantId,
-        firstName: "John",
-        lastName: "Smith",
-        email: "john.smith@email.com",
-        phone: "+1 (555) 123-4567",
-        creditScore: 720,
-        annualIncome: 75000,
-        monthlyIncome: 6250,
-        employmentStatus: "EMPLOYED",
-        employmentYears: 3,
-        previousAddress: "456 Oak Street, Previous City, PC 12345",
-        rentalHistory: "Positive rental history with previous landlord",
-        criminalHistory: false,
-        evictionHistory: false,
-        references: ["Previous landlord: excellent", "Employer: reliable"],
-        requestedRent: 2200,
-      };
-
-      setApplicant(mockApplicant);
+      const data = await response.json();
+      if (data.success) {
+        setApplicant(data.data);
+      } else {
+        throw new Error(data.error?.message || "Failed to load applicant data");
+      }
     } catch (error) {
       console.error("Error loading applicant data:", error);
-      toast.error("Failed to load applicant data");
+      toast.error(error instanceof Error ? error.message : "Failed to load applicant data");
     } finally {
       setIsLoading(false);
     }
@@ -107,13 +104,20 @@ export default function TenantScreening({ applicantId }: { applicantId: string }
   // Load screening history
   const loadScreeningHistory = async () => {
     try {
-      // TODO: Fetch screening history from database
-      // const response = await fetch(`/api/tenants/${applicantId}/screenings`);
+      const response = await fetch(`/api/ai/screening/history?applicantId=${applicantId}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch screening history: ${response.statusText}`);
+      }
 
-      // For now, check if we have a recent screening result
-      // If not, we'll run a new analysis
+      const data = await response.json();
+      if (data.success) {
+        setScreeningHistory(data.data || []);
+      } else {
+        throw new Error(data.error?.message || "Failed to load screening history");
+      }
     } catch (error) {
       console.error("Error loading screening history:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to load screening history");
     }
   };
 
@@ -167,34 +171,55 @@ export default function TenantScreening({ applicantId }: { applicantId: string }
 
   // Handle approve/reject actions
   const handleApproval = async (decision: "APPROVE" | "DENY") => {
+    if (!applicant) return;
+
     try {
-      // TODO: Update tenant application status
-      // await fetch(`/api/tenants/${applicantId}/application`, {
-      //   method: "PATCH",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({
-      //     status: decision === "APPROVE" ? "APPROVED" : "DENIED",
-      //     screeningId: screeningResult?.screeningId,
-      //   }),
-      // });
+      const newStatus = decision === "APPROVE" ? "APPROVED" : "DENIED";
+      const statusMessage = `Your rental application has been ${decision.toLowerCase()}d.`;
+
+      // Update tenant application status
+      const statusResponse = await fetch(`/api/tenants/${applicantId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: newStatus,
+          screeningId: screeningResult?.screeningId,
+        }),
+      });
+
+      if (!statusResponse.ok) {
+        throw new Error(`Failed to update application status: ${statusResponse.statusText}`);
+      }
+
+      const statusData = await statusResponse.json();
+      if (!statusData.success) {
+        throw new Error(statusData.error?.message || "Failed to update application status");
+      }
 
       toast.success(`Application ${decision.toLowerCase()}d successfully`);
 
-      // TODO: Send notification email to applicant
-      // await fetch("/api/communications/send", {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({
-      //     recipientId: applicant?.email,
-      //     recipientType: "TENANT",
-      //     type: "EMAIL",
-      //     subject: `Application ${decision === "APPROVE" ? "Approved" : "Denied"}`,
-      //     message: `Your rental application has been ${decision.toLowerCase()}d.`,
-      //   }),
-      // });
+      // Send notification email to applicant
+      const emailResponse = await fetch("/api/communications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          recipientId: applicantId,
+          recipientType: "TENANT",
+          type: "EMAIL",
+          subject: `Application Status Update`,
+          message: statusMessage,
+        }),
+      });
+
+      if (!emailResponse.ok) {
+        console.warn("Failed to send notification email:", emailResponse.statusText);
+        toast.warning("Application updated but failed to send notification email");
+      } else {
+        toast.success("Notification email sent to applicant");
+      }
     } catch (error) {
       console.error("Error updating application:", error);
-      toast.error("Failed to update application status");
+      toast.error(error instanceof Error ? error.message : "Failed to update application status");
     }
   };
 
@@ -460,15 +485,15 @@ export default function TenantScreening({ applicantId }: { applicantId: string }
           <CardHeader>
             <div className="flex space-x-1">
               {[
-                { id: "overview", label: "Overview", icon: Home },
-                { id: "details", label: "Details", icon: FileText },
-                { id: "history", label: "History", icon: Clock },
+                { id: "overview" as TabType, label: "Overview", icon: Home },
+                { id: "details" as TabType, label: "Details", icon: FileText },
+                { id: "history" as TabType, label: "History", icon: Clock },
               ].map((tab) => (
                 <Button
                   key={tab.id}
                   variant={activeTab === tab.id ? "default" : "outline"}
                   size="sm"
-                  onClick={() => setActiveTab(tab.id as any)}
+                  onClick={() => setActiveTab(tab.id)}
                   className="flex items-center gap-2"
                 >
                   <tab.icon className="h-4 w-4" />
@@ -561,10 +586,42 @@ export default function TenantScreening({ applicantId }: { applicantId: string }
             )}
 
             {activeTab === "history" && (
-              <div className="text-center py-8 text-muted-foreground">
-                <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>Screening history will be displayed here</p>
-                <p className="text-sm">Previous analyses and decisions for this applicant</p>
+              <div className="space-y-4">
+                {screeningHistory.length > 0 ? (
+                  <div className="space-y-3">
+                    {screeningHistory.map((history) => (
+                      <div key={history.id} className="flex items-center justify-between p-4 border rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-3 h-3 rounded-full ${
+                            history.riskScore >= 80 ? "bg-green-500" :
+                            history.riskScore >= 60 ? "bg-yellow-500" :
+                            history.riskScore >= 40 ? "bg-orange-500" : "bg-red-500"
+                          }`} />
+                          <div>
+                            <p className="font-medium">{history.recommendation}</p>
+                            <p className="text-sm text-muted-foreground">
+                              Risk Score: {history.riskScore}%
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm text-muted-foreground">
+                            {new Date(history.processedAt).toLocaleDateString()}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(history.processedAt).toLocaleTimeString()}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No screening history available</p>
+                    <p className="text-sm">Previous analyses and decisions for this applicant</p>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
@@ -573,3 +630,5 @@ export default function TenantScreening({ applicantId }: { applicantId: string }
     </div>
   );
 }
+
+export { TenantScreening };

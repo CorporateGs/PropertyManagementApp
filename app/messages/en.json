@@ -1,0 +1,34 @@
+{
+    "Dashboard": {
+        "title": "Dashboard",
+        "welcome": "Welcome back",
+        "overview": "Overview"
+    },
+    "Navigation": {
+        "dashboard": "Dashboard",
+        "communications": "Communications",
+        "services": "My Services",
+        "settings": "Settings",
+        "analytics": "Analytics"
+    },
+    "Communications": {
+        "title": "Communications",
+        "compose": "Compose",
+        "templates": "Templates",
+        "searchPlaceholder": "Search communications...",
+        "filters": {
+            "all": "All Messages",
+            "pending": "Pending Follow-ups",
+            "important": "Important",
+            "sent": "Sent",
+            "received": "Received"
+        }
+    },
+    "Common": {
+        "save": "Save",
+        "cancel": "Cancel",
+        "delete": "Delete",
+        "edit": "Edit",
+        "loading": "Loading..."
+    }
+}

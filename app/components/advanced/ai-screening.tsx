@@ -34,7 +34,8 @@ import {
   Download,
   Upload,
   Zap,
-  Target
+  Target,
+  RefreshCw
 } from 'lucide-react';
 
 interface TenantApplication {
@@ -125,19 +126,28 @@ export function AIScreening() {
   const [selectedApplication, setSelectedApplication] = useState<TenantApplication | null>(null);
   const [activeTab, setActiveTab] = useState('applications');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [error, setError] = useState<string | null>(null);
+  const [simulateError, setSimulateError] = useState(false); // For demo purposes - remove when real API is integrated
 
   const getRiskColor = (score: number | undefined) => {
-    if (!score) return 'text-gray-500 bg-gray-100';
+    if (score === undefined || score === null) return 'text-gray-500 bg-gray-100';
     if (score < 30) return 'text-green-600 bg-green-100';
     if (score < 60) return 'text-orange-600 bg-orange-100';
     return 'text-red-600 bg-red-100';
   };
 
   const getRiskLabel = (score: number | undefined) => {
-    if (!score) return 'Analyzing';
+    if (score === undefined || score === null) return 'Analyzing';
+    if (score === 0) return 'Very Low Risk';
     if (score < 30) return 'Low Risk';
     if (score < 60) return 'Moderate Risk';
     return 'High Risk';
+  };
+
+  const handleRetry = () => {
+    setError(null);
+    setSimulateError(false);
+    // In real implementation, retry the API call here
   };
 
   const getStatusIcon = (status: string) => {
@@ -173,6 +183,9 @@ export function AIScreening() {
           </p>
         </div>
         <div className="flex space-x-3">
+          <Button variant="outline" onClick={() => setSimulateError(!simulateError)}>
+            {simulateError ? 'Clear Error' : 'Simulate Error'}
+          </Button>
           <Button variant="outline">
             <Upload className="h-4 w-4 mr-2" />
             Bulk Import
@@ -183,6 +196,25 @@ export function AIScreening() {
           </Button>
         </div>
       </div>
+
+      {/* Error Handling */}
+      {error && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <XCircle className="h-5 w-5 text-red-600" />
+                <span className="text-red-800 font-medium">Screening API Error</span>
+              </div>
+              <Button variant="outline" size="sm" onClick={handleRetry}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry
+              </Button>
+            </div>
+            <p className="text-red-700 mt-2">{error}</p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -256,6 +288,7 @@ export function AIScreening() {
         </TabsList>
 
         <TabsContent value="applications" className="space-y-6">
+          {simulateError && setError('Failed to load tenant applications. Please check your connection and try again.')}
           <div className="flex items-center space-x-4">
             <Select value={filterStatus} onValueChange={setFilterStatus}>
               <SelectTrigger className="w-48">

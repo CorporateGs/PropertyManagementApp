@@ -1,4 +1,4 @@
-import { getServerSession } from "next-auth";
+import { getServerSession } from "next-auth/next";
 import { NextRequest } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -74,8 +74,9 @@ export function requireRole(roles: UserRole[]) {
     const user = await requireAuth(request);
 
     if (!roles.includes(user.role)) {
+      console.log(`Authorization failed: User ${user.id} with role ${user.role} attempted to access resource requiring roles: ${roles.join(", ")}`);
       throw new AuthorizationError(
-        `Access denied. Required roles: ${roles.join(", ")}`
+        `Access denied. Required roles: ${roles.join(", ")}. Your role: ${user.role}`
       );
     }
 
@@ -102,18 +103,18 @@ export async function requireOwnership(
         const tenant = await prisma.tenant.findFirst({
           where: {
             id: resourceId,
-            userId: userId,
+            createdBy: userId,
           },
         });
         return !!tenant;
 
       case "unit":
         // Check if user owns the building containing the unit
-        const unit = await prisma.units.findFirst({
+        const unit = await prisma.unit.findFirst({
           where: {
             id: resourceId,
             building: {
-              ownerId: userId,
+              createdBy: userId,
             },
           },
         });
@@ -124,7 +125,7 @@ export async function requireOwnership(
         const building = await prisma.building.findFirst({
           where: {
             id: resourceId,
-            ownerId: userId,
+            createdBy: userId,
           },
         });
         return !!building;
@@ -135,7 +136,7 @@ export async function requireOwnership(
           where: {
             id: resourceId,
             tenant: {
-              userId: userId,
+              createdBy: userId,
             },
           },
         });
@@ -147,7 +148,7 @@ export async function requireOwnership(
           where: {
             id: resourceId,
             tenant: {
-              userId: userId,
+              createdBy: userId,
             },
           },
         });
@@ -198,7 +199,8 @@ export function requireTenantAccess(tenantId: string) {
     if (user.role === "TENANT") {
       const hasAccess = await requireOwnership("tenant", tenantId, user.id);
       if (!hasAccess) {
-        throw new AuthorizationError("Access denied to this tenant data");
+        console.log(`User ${user.id} denied access to tenant ${tenantId}`);
+        throw new AuthorizationError("Access denied to this tenant data. You can only access your own tenant record.");
       }
       return user;
     }
@@ -210,19 +212,21 @@ export function requireTenantAccess(tenantId: string) {
           id: tenantId,
           unit: {
             building: {
-              ownerId: user.id,
+              createdBy: user.id,
             },
           },
         },
       });
 
       if (!tenant) {
-        throw new AuthorizationError("Access denied to this tenant data");
+        console.log(`User ${user.id} denied access to tenant ${tenantId}`);
+        throw new AuthorizationError("Access denied to this tenant data. You can only access tenants in your buildings.");
       }
       return user;
     }
 
-    throw new AuthorizationError("Access denied");
+    console.log(`User ${user.id} with role ${user.role} denied access to tenant ${tenantId}`);
+    throw new AuthorizationError("Access denied. Insufficient permissions to access tenant data.");
   };
 }
 
@@ -244,35 +248,38 @@ export function requireUnitAccess(unitId: string) {
     if (user.role === "TENANT") {
       const tenant = await prisma.tenant.findFirst({
         where: {
-          userId: user.id,
+          createdBy: user.id,
           unitId: unitId,
         },
       });
 
       if (!tenant) {
-        throw new AuthorizationError("Access denied to this unit data");
+        console.log(`User ${user.id} denied access to unit ${unitId}`);
+        throw new AuthorizationError("Access denied to this unit data. You can only access your own unit.");
       }
       return user;
     }
 
     // Owners can access units in their buildings
     if (user.role === "OWNER") {
-      const unit = await prisma.units.findFirst({
+      const unit = await prisma.unit.findFirst({
         where: {
           id: unitId,
           building: {
-            ownerId: user.id,
+            createdBy: user.id,
           },
         },
       });
 
       if (!unit) {
-        throw new AuthorizationError("Access denied to this unit data");
+        console.log(`User ${user.id} denied access to unit ${unitId}`);
+        throw new AuthorizationError("Access denied to this unit data. You can only access units in your buildings.");
       }
       return user;
     }
 
-    throw new AuthorizationError("Access denied");
+    console.log(`User ${user.id} with role ${user.role} denied access to unit ${unitId}`);
+    throw new AuthorizationError("Access denied. Insufficient permissions to access unit data.");
   };
 }
 
@@ -295,12 +302,13 @@ export function requireBuildingAccess(buildingId: string) {
       const building = await prisma.building.findFirst({
         where: {
           id: buildingId,
-          ownerId: user.id,
+          createdBy: user.id,
         },
       });
 
       if (!building) {
-        throw new AuthorizationError("Access denied to this building data");
+        console.log(`User ${user.id} denied access to building ${buildingId}`);
+        throw new AuthorizationError("Access denied to this building data. You can only access your own buildings.");
       }
       return user;
     }
@@ -309,7 +317,7 @@ export function requireBuildingAccess(buildingId: string) {
     if (user.role === "TENANT") {
       const tenant = await prisma.tenant.findFirst({
         where: {
-          userId: user.id,
+          createdBy: user.id,
           unit: {
             buildingId: buildingId,
           },
@@ -317,12 +325,14 @@ export function requireBuildingAccess(buildingId: string) {
       });
 
       if (!tenant) {
-        throw new AuthorizationError("Access denied to this building data");
+        console.log(`User ${user.id} denied access to building ${buildingId}`);
+        throw new AuthorizationError("Access denied to this building data. You can only access buildings where you have a tenancy.");
       }
       return user;
     }
 
-    throw new AuthorizationError("Access denied");
+    console.log(`User ${user.id} with role ${user.role} denied access to building ${buildingId}`);
+    throw new AuthorizationError("Access denied. Insufficient permissions to access building data.");
   };
 }
 
